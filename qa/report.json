@@ -1,0 +1,42 @@
+{
+  "passed": 9,
+  "checks": [
+    {
+      "name": "dashboard desktop",
+      "ok": true
+    },
+    {
+      "name": "navegación entre snapshots mensuales",
+      "ok": true
+    },
+    {
+      "name": "privacidad global persistente",
+      "ok": true
+    },
+    {
+      "name": "alta y persistencia tras recarga",
+      "ok": true
+    },
+    {
+      "name": "plan de cuotas vinculado",
+      "ok": true
+    },
+    {
+      "name": "recurrencias proyectadas sin duplicación",
+      "ok": true
+    },
+    {
+      "name": "calendario y layout mobile sin scroll horizontal",
+      "ok": true
+    },
+    {
+      "name": "exportación e importación JSON",
+      "ok": true
+    },
+    {
+      "name": "consola del navegador limpia",
+      "ok": true
+    }
+  ],
+  "errors": []
+}
