@@ -1,4 +1,4 @@
-import type { Category, Currency, MonthlyFinanceData, MonthlyLimit, Transaction, TransactionType } from './models';
+import type { Category, Currency, FinanceDatabase, MonthlyFinanceData, MonthlyLimit, SavingsGoal, Transaction, TransactionType } from './models';
 
 export interface FinanceSummary {
   income: number;
@@ -55,13 +55,43 @@ export function expensesByCategory(
 }
 
 export const limitProgress = (limit: MonthlyLimit, month: MonthlyFinanceData) => {
+  const salary = monthlySalary(month, limit.currency);
+  const configuredPercentage = limit.percentage ?? (salary > 0 && limit.amount ? limit.amount / salary * 100 : 0);
+  const limitAmount = salary > 0 && configuredPercentage > 0 ? salary * configuredPercentage / 100 : limit.amount ?? 0;
   const spent = month.transactions
     .filter((item) => item.type === 'expense' && item.categoryId === limit.categoryId && item.currency === limit.currency)
     .reduce(sumAmount, 0);
-  return { spent, percentage: limit.amount > 0 ? (spent / limit.amount) * 100 : 0 };
+  return { spent, limitAmount, configuredPercentage, percentage: limitAmount > 0 ? (spent / limitAmount) * 100 : 0 };
 };
 
 export const goalTotal = (contributions: { amount: number }[]) => contributions.reduce((sum, item) => sum + item.amount, 0);
+export const goalSavedAmount = (goal: SavingsGoal, selectedMonth: string) => goalTotal(goal.targetMode === 'salaryPercentage'
+  ? goal.contributions.filter((item) => item.date.startsWith(selectedMonth))
+  : goal.contributions);
+
+export const monthlySalary = (month: MonthlyFinanceData, currency: Currency = 'ARS') => month.transactions
+  .filter((item) => item.type === 'income' && !!item.recurrenceId && item.currency === currency)
+  .reduce(sumAmount, 0);
+
+export const goalTargetAmount = (goal: SavingsGoal, month: MonthlyFinanceData) => goal.targetMode === 'salaryPercentage'
+  ? monthlySalary(month, goal.currency) * (goal.salaryPercentage ?? 0) / 100
+  : goal.targetAmount;
+
+export interface InvestmentHolding { ticker: string; quantity: number; investedAmount: number }
+
+export function investmentHoldings(database: FinanceDatabase, throughMonth: string): InvestmentHolding[] {
+  const holdings = new Map<string, InvestmentHolding>();
+  Object.entries(database.months)
+    .filter(([key]) => key <= throughMonth)
+    .flatMap(([, month]) => month.transactions)
+    .filter((item) => item.type === 'investment' && item.currency === 'ARS')
+    .forEach((item) => {
+      const ticker = item.investmentTicker?.toUpperCase() ?? 'SIN TICKER';
+      const current = holdings.get(ticker) ?? { ticker, quantity: 0, investedAmount: 0 };
+      holdings.set(ticker, { ticker, quantity: current.quantity + (item.investmentQuantity ?? 0), investedAmount: current.investedAmount + item.amount });
+    });
+  return [...holdings.values()];
+}
 
 export function dailyBalance(transactions: Transaction[], currency: Currency = 'ARS') {
   const days = new Map<number, number>();

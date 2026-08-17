@@ -2,35 +2,35 @@
   "passed": 9,
   "checks": [
     {
-      "name": "dashboard desktop",
+      "name": "ruta privada protegida",
       "ok": true
     },
     {
-      "name": "navegación entre snapshots mensuales",
+      "name": "registro, sesión y carga autenticada",
       "ok": true
     },
     {
-      "name": "privacidad global persistente",
+      "name": "dashboard, leyenda y navegación de límites",
       "ok": true
     },
     {
-      "name": "alta y persistencia tras recarga",
+      "name": "análisis sin gráfico removido ni bordes",
       "ok": true
     },
     {
-      "name": "plan de cuotas vinculado",
+      "name": "CRUD persistido después de recargar",
       "ok": true
     },
     {
-      "name": "recurrencias proyectadas sin duplicación",
+      "name": "aporte y movimiento guardados atómicamente",
       "ok": true
     },
     {
-      "name": "calendario y layout mobile sin scroll horizontal",
+      "name": "aislamiento RLS entre dos usuarios",
       "ok": true
     },
     {
-      "name": "exportación e importación JSON",
+      "name": "preferencias sincronizadas",
       "ok": true
     },
     {

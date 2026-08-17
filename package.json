@@ -8,9 +8,11 @@
     "build": "tsc -b && vite build",
     "lint": "eslint .",
     "test": "vitest run",
+    "test:e2e": "node qa/browser-qa.mjs",
     "test:watch": "vitest"
   },
   "dependencies": {
+    "@supabase/supabase-js": "^2.112.3",
     "@vitejs/plugin-react": "latest",
     "date-fns": "latest",
     "lucide-react": "latest",
@@ -32,6 +34,7 @@
     "globals": "latest",
     "jsdom": "latest",
     "playwright-core": "^1.62.1",
+    "supabase": "^2.114.0",
     "typescript": "latest",
     "typescript-eslint": "latest",
     "vite": "latest",

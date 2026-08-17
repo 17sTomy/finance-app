@@ -2,6 +2,9 @@ node_modules
 dist
 .vite
 *.local
+.env
+.env.*
+!.env.example
 coverage
 .brave-qa-*/
 *.tsbuildinfo
@@ -9,3 +12,5 @@ vite.config.js
 vite.config.d.ts
 dev-server*.log
 qa/month-export.json
+supabase/.branches/
+supabase/.temp/

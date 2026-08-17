@@ -10,7 +10,7 @@ import { formatShortDate } from '../../../shared/utils/format';
 import { TransactionForm } from './TransactionForm';
 
 type Filter = 'all' | TransactionType;
-const filters: { value: Filter; label: string }[] = [{ value: 'all', label: 'Todos' }, { value: 'income', label: 'Ingresos' }, { value: 'expense', label: 'Gastos' }, { value: 'saving', label: 'Ahorro' }, { value: 'investment', label: 'Inversiones' }];
+const filters: { value: Filter; label: string }[] = [{ value: 'all', label: 'Todos' }, { value: 'income', label: 'Ingresos' }, { value: 'expense', label: 'Gastos' }, { value: 'saving', label: 'Ahorro USD' }, { value: 'investment', label: 'Inversiones' }];
 
 const iconByType = { income: ArrowUp, expense: ArrowDown, saving: PiggyBank, investment: TrendingUp };
 
@@ -39,8 +39,8 @@ export function TransactionsPage() {
         const Icon = iconByType[item.type];
         return <article className="transaction-row" key={item.id}>
           <span className={`transaction-icon transaction-icon--${item.type}`}><Icon size={18} /></span>
-          <div className="transaction-name"><strong>{item.name}{item.installmentNumber && <span className="installment-label">Cuota {item.installmentNumber}/{item.installmentCount}</span>}</strong><small>{categoryItem?.name ?? 'Sin categoría'} · {formatShortDate(item.date)}</small></div>
-          <span className={`type-badge type-badge--${item.type}`}>{item.type === 'income' ? 'Ingreso' : item.type === 'expense' ? item.expenseType === 'fixed' ? 'Fijo' : 'Gasto' : item.type === 'saving' ? 'Ahorro' : 'Inversión'}</span>
+          <div className="transaction-name"><strong>{item.name}{item.installmentNumber && <span className="installment-label">Cuota {item.installmentNumber}/{item.installmentCount}</span>}</strong><small>{categoryItem?.name ?? 'Sin categoría'} · {formatShortDate(item.date)}{item.investmentTicker ? ` · ${item.investmentQuantity} ${item.investmentTicker}` : ''}</small></div>
+          <span className={`type-badge type-badge--${item.type}`}>{item.type === 'income' ? 'Ingreso' : item.type === 'expense' ? item.expenseType === 'fixed' ? 'Fijo' : 'Gasto' : item.type === 'saving' ? 'Ahorro USD' : 'Inversión'}</span>
           <MoneyValue value={item.type === 'income' ? item.amount : -item.amount} currency={item.currency} signed className={`transaction-amount transaction-amount--${item.type}`} />
           <div className="row-actions"><button className="icon-button" aria-label={`Editar ${item.name}`} onClick={() => setEditing(item)}><Pencil size={17} /></button><button className="icon-button" aria-label={`Eliminar ${item.name}`} onClick={() => setDeleting(item)}><Trash2 size={17} /></button></div>
           <button className="icon-button mobile-row-menu" aria-label={`Acciones para ${item.name}`} onClick={() => setEditing(item)}><MoreHorizontal size={19} /></button>

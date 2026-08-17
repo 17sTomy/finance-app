@@ -1,16 +1,23 @@
-import { createContext, useCallback, useContext, useEffect, useMemo, useState, type ReactNode } from 'react';
+import { createContext, useCallback, useContext, useEffect, useMemo, useRef, useState, type ReactNode } from 'react';
 import { addMonths, format, parseISO } from 'date-fns';
-import { LocalFinanceRepository } from '../../infrastructure/persistence/LocalFinanceRepository';
+import { SupabaseFinanceRepository } from '../../infrastructure/persistence/SupabaseFinanceRepository';
+import { normalizeFinanceDatabaseIds } from '../../infrastructure/persistence/financeMappers';
 import type { CalendarEvent, Category, FinanceDatabase, FixedExpense, InstallmentPlan, MonthlyLimit, RecurringIncome, SavingsGoal, Transaction } from '../../modules/finance/domain/models';
 import { newId } from '../../modules/finance/domain/models';
-import { generateInstallments, projectFixedExpense } from '../../modules/finance/domain/projections';
+import { generateInstallments, projectFixedExpense, projectSalary, synchronizeSalaryDates } from '../../modules/finance/domain/projections';
+import { addGoalContribution } from '../../modules/finance/domain/financeOperations';
 import { createDemoDatabase, createMonth } from '../../modules/finance/infrastructure/demoData';
+import { getCachedHolidayDates, loadArgentinaHolidayDates } from '../../modules/finance/infrastructure/argentinaHolidays';
+import { useAuth } from './AuthProvider';
 
 interface FinanceContextValue {
   database: FinanceDatabase;
   selectedMonth: string;
   monthData: FinanceDatabase['months'][string];
   showAmounts: boolean;
+  isLoading: boolean;
+  persistenceError: string | null;
+  retryPersistence: () => void;
   changeMonth: (offset: number) => void;
   setSelectedMonth: (value: string) => void;
   toggleAmounts: () => void;
@@ -32,37 +39,89 @@ interface FinanceContextValue {
   contributeToGoal: (id: string, amount: number) => void;
   saveEvent: (value: CalendarEvent) => void;
   deleteEvent: (id: string) => void;
-  importJson: (raw: string) => void;
+  importJson: (raw: string) => Promise<void>;
   exportJson: (scope: 'month' | 'year' | 'all') => string;
   resetDemo: () => void;
 }
 
-const repository = new LocalFinanceRepository();
+const repository = new SupabaseFinanceRepository();
 const FinanceContext = createContext<FinanceContextValue | null>(null);
+const currentMonth = () => format(new Date(), 'yyyy-MM');
+const emptyDatabase = (): FinanceDatabase => ({ version: 1, months: {}, categories: [], fixedExpenses: [], recurringIncomes: [], installmentPlans: [], goals: [] });
 
-function getInitialMonth() {
-  const saved = repository.loadPreferences()?.selectedMonth;
-  return saved ?? '2026-08';
+function ensureDatabaseMonth(source: FinanceDatabase, key: string) {
+  if (source.months[key]) return source;
+  const [year, month] = key.split('-').map(Number);
+  return { ...source, months: { ...source.months, [key]: createMonth(year, month, source) } };
 }
 
 export function FinanceProvider({ children }: { children: ReactNode }) {
-  const [selectedMonth, setSelectedMonthState] = useState(getInitialMonth);
-  const [database, setDatabase] = useState<FinanceDatabase>(() => {
-    const stored = repository.load() ?? createDemoDatabase();
-    if (stored.months[selectedMonth]) return stored;
-    const [year, month] = selectedMonth.split('-').map(Number);
-    return { ...stored, months: { ...stored.months, [selectedMonth]: createMonth(year, month, stored) } };
-  });
-  const [showAmounts, setShowAmounts] = useState(() => repository.loadPreferences()?.showAmounts ?? true);
+  const { user } = useAuth();
+  const [selectedMonth, setSelectedMonthState] = useState(currentMonth);
+  const [database, setDatabase] = useState<FinanceDatabase>(emptyDatabase);
+  const [showAmounts, setShowAmounts] = useState(true);
+  const [isLoading, setIsLoading] = useState(true);
+  const [hydrated, setHydrated] = useState(false);
+  const [persistenceError, setPersistenceError] = useState<string | null>(null);
+  const saveQueue = useRef<Promise<void>>(Promise.resolve());
 
-  const ensureMonth = useCallback((key: string, source = database) => {
-    if (source.months[key]) return source;
-    const [year, month] = key.split('-').map(Number);
-    return { ...source, months: { ...source.months, [key]: createMonth(year, month, source) } };
-  }, [database]);
+  const persistSnapshot = useCallback((snapshot: FinanceDatabase) => {
+    saveQueue.current = saveQueue.current.catch(() => undefined).then(async () => {
+      await repository.save(snapshot);
+      setPersistenceError(null);
+    }).catch((error: unknown) => {
+      console.error('Falló la sincronización con Supabase.', error);
+      setPersistenceError('No pudimos sincronizar los últimos cambios con Supabase. Revisá tu conexión y reintentá.');
+    });
+  }, []);
 
-  useEffect(() => { repository.save(database); }, [database]);
-  useEffect(() => { repository.savePreferences({ selectedMonth, showAmounts }); }, [selectedMonth, showAmounts]);
+  useEffect(() => {
+    if (!user) return;
+    let active = true;
+    Promise.all([repository.load(user.id), repository.loadPreferences(user.id)])
+      .then(([stored, preferences]) => {
+        if (!active) return;
+        const month = preferences?.selectedMonth ?? currentMonth();
+        setSelectedMonthState(month);
+        setShowAmounts(preferences?.showAmounts ?? true);
+        setDatabase(ensureDatabaseMonth(stored, month));
+        setHydrated(true);
+      })
+      .catch((error: unknown) => {
+        if (!active) return;
+        console.error('No se pudieron cargar los datos de Supabase.', error);
+        setPersistenceError('No pudimos cargar tus finanzas desde Supabase. Verificá la configuración y tu conexión.');
+      })
+      .finally(() => { if (active) setIsLoading(false); });
+    return () => { active = false; };
+  }, [user]);
+
+  useEffect(() => {
+    if (!hydrated) return;
+    const timer = window.setTimeout(() => persistSnapshot(database), 180);
+    return () => window.clearTimeout(timer);
+  }, [database, hydrated, persistSnapshot]);
+
+  useEffect(() => {
+    if (!hydrated) return;
+    const timer = window.setTimeout(() => repository.savePreferences({ selectedMonth, showAmounts }).catch((error: unknown) => {
+      console.error('No se pudieron guardar las preferencias.', error);
+      setPersistenceError('No pudimos sincronizar tus preferencias con Supabase.');
+    }), 180);
+    return () => window.clearTimeout(timer);
+  }, [selectedMonth, showAmounts, hydrated]);
+
+  useEffect(() => {
+    if (!hydrated) return;
+    const controller = new AbortController();
+    const year = Number(selectedMonth.slice(0, 4));
+    loadArgentinaHolidayDates(year, controller.signal)
+      .then((dates) => setDatabase((current) => synchronizeSalaryDates(current, year, dates)))
+      .catch((error: unknown) => { if (!(error instanceof DOMException && error.name === 'AbortError')) console.warn('Se usa el calendario hábil local como respaldo.', error); });
+    return () => controller.abort();
+  }, [selectedMonth, hydrated]);
+
+  const ensureMonth = useCallback((key: string, source = database) => ensureDatabaseMonth(source, key), [database]);
 
   const setSelectedMonth = useCallback((key: string) => {
     setDatabase((current) => ensureMonth(key, current));
@@ -84,13 +143,12 @@ export function FinanceProvider({ children }: { children: ReactNode }) {
     selectedMonth,
     monthData: database.months[selectedMonth] ?? createMonth(...selectedMonth.split('-').map(Number) as [number, number], database),
     showAmounts,
+    isLoading,
+    persistenceError,
+    retryPersistence: () => persistSnapshot(database),
     changeMonth,
     setSelectedMonth,
-    toggleAmounts: () => setShowAmounts((current) => {
-      const next = !current;
-      repository.savePreferences({ selectedMonth, showAmounts: next });
-      return next;
-    }),
+    toggleAmounts: () => setShowAmounts((current) => !current),
     addTransaction: (transaction) => updateCurrentMonth((month) => ({ ...month, transactions: [...month.transactions, { ...transaction, id: newId() }] })),
     updateTransaction: (transaction) => updateCurrentMonth((month) => ({ ...month, transactions: month.transactions.map((item) => item.id === transaction.id ? transaction : item) })),
     deleteTransaction: (id) => updateCurrentMonth((month) => ({ ...month, transactions: month.transactions.filter((item) => item.id !== id) })),
@@ -105,9 +163,28 @@ export function FinanceProvider({ children }: { children: ReactNode }) {
       return { ...current, fixedExpenses, months: { ...current.months, [selectedMonth]: { ...snapshot, transactions } } };
     }),
     toggleFixedExpense: (id) => setDatabase((current) => ({ ...current, fixedExpenses: current.fixedExpenses.map((item) => item.id === id ? { ...item, active: !item.active } : item) })),
-    deleteFixedExpense: (id) => setDatabase((current) => ({ ...current, fixedExpenses: current.fixedExpenses.filter((item) => item.id !== id) })),
-    saveRecurringIncome: (income) => setDatabase((current) => ({ ...current, recurringIncomes: current.recurringIncomes.some((item) => item.id === income.id) ? current.recurringIncomes.map((item) => item.id === income.id ? income : item) : [...current.recurringIncomes, income] })),
-    toggleRecurringIncome: (id) => setDatabase((current) => ({ ...current, recurringIncomes: current.recurringIncomes.map((item) => item.id === id ? { ...item, active: !item.active } : item) })),
+    deleteFixedExpense: (id) => setDatabase((current) => ({ ...current, fixedExpenses: current.fixedExpenses.filter((item) => item.id !== id), months: Object.fromEntries(Object.entries(current.months).map(([key, month]) => [key, { ...month, transactions: month.transactions.map((item) => item.recurrenceId === id ? { ...item, recurrenceId: undefined } : item) }])) })),
+    saveRecurringIncome: (income) => setDatabase((current) => {
+      const recurringIncomes = current.recurringIncomes.some((item) => item.id === income.id) ? current.recurringIncomes.map((item) => item.id === income.id ? income : item) : [...current.recurringIncomes, income];
+      const snapshot = current.months[selectedMonth];
+      const [year, month] = selectedMonth.split('-').map(Number);
+      const projected = projectSalary(income, year, month, getCachedHolidayDates(year));
+      if (!snapshot) return { ...current, recurringIncomes };
+      const transactions = [...snapshot.transactions.filter((item) => !(item.recurrenceId === income.id && item.type === 'income')), ...(projected ? [projected] : [])];
+      return { ...current, recurringIncomes, months: { ...current.months, [selectedMonth]: { ...snapshot, transactions } } };
+    }),
+    toggleRecurringIncome: (id) => setDatabase((current) => {
+      const income = current.recurringIncomes.find((item) => item.id === id);
+      if (!income) return current;
+      const updated = { ...income, active: !income.active };
+      const recurringIncomes = current.recurringIncomes.map((item) => item.id === id ? updated : item);
+      const snapshot = current.months[selectedMonth];
+      const [year, month] = selectedMonth.split('-').map(Number);
+      const projected = projectSalary(updated, year, month, getCachedHolidayDates(year));
+      if (!snapshot) return { ...current, recurringIncomes };
+      const transactions = [...snapshot.transactions.filter((item) => !(item.recurrenceId === id && item.type === 'income')), ...(projected ? [projected] : [])];
+      return { ...current, recurringIncomes, months: { ...current.months, [selectedMonth]: { ...snapshot, transactions } } };
+    }),
     addInstallmentPlan: (planValue) => setDatabase((current) => {
       const plan = { ...planValue, id: newId() };
       const months = { ...current.months };
@@ -120,15 +197,29 @@ export function FinanceProvider({ children }: { children: ReactNode }) {
       return { ...current, installmentPlans: [...current.installmentPlans, plan], months };
     }),
     saveCategory: (category) => setDatabase((current) => ({ ...current, categories: current.categories.some((item) => item.id === category.id) ? current.categories.map((item) => item.id === category.id ? category : item) : [...current.categories, category] })),
-    deleteCategory: (id) => setDatabase((current) => ({ ...current, categories: current.categories.filter((item) => item.id !== id) })),
+    deleteCategory: (id) => setDatabase((current) => ({
+      ...current,
+      categories: current.categories.filter((item) => item.id !== id),
+      fixedExpenses: current.fixedExpenses.map((item) => item.categoryId === id ? { ...item, categoryId: '' } : item),
+      installmentPlans: current.installmentPlans.map((item) => item.categoryId === id ? { ...item, categoryId: '' } : item),
+      months: Object.fromEntries(Object.entries(current.months).map(([key, month]) => [key, {
+        ...month,
+        transactions: month.transactions.map((item) => item.categoryId === id ? { ...item, categoryId: undefined } : item),
+        limits: month.limits.filter((item) => item.categoryId !== id),
+      }])),
+    })),
     saveLimit: (limit) => updateCurrentMonth((month) => ({ ...month, limits: month.limits.some((item) => item.id === limit.id) ? month.limits.map((item) => item.id === limit.id ? limit : item) : [...month.limits, limit] })),
     deleteLimit: (id) => updateCurrentMonth((month) => ({ ...month, limits: month.limits.filter((item) => item.id !== id) })),
     saveGoal: (goal) => setDatabase((current) => ({ ...current, goals: current.goals.some((item) => item.id === goal.id) ? current.goals.map((item) => item.id === goal.id ? goal : item) : [...current.goals, goal] })),
-    deleteGoal: (id) => setDatabase((current) => ({ ...current, goals: current.goals.filter((item) => item.id !== id) })),
-    contributeToGoal: (id, amount) => setDatabase((current) => ({ ...current, goals: current.goals.map((goal) => goal.id === id ? { ...goal, contributions: [...goal.contributions, { id: newId(), amount, date: `${selectedMonth}-15` }] } : goal) })),
+    deleteGoal: (id) => setDatabase((current) => ({ ...current, goals: current.goals.filter((item) => item.id !== id), months: Object.fromEntries(Object.entries(current.months).map(([key, month]) => [key, { ...month, transactions: month.transactions.map((item) => item.goalId === id ? { ...item, goalId: undefined } : item) }])) })),
+    contributeToGoal: (id, amount) => setDatabase((current) => addGoalContribution(current, selectedMonth, id, amount, newId())),
     saveEvent: (event) => updateCurrentMonth((month) => ({ ...month, events: month.events.some((item) => item.id === event.id) ? month.events.map((item) => item.id === event.id ? event : item) : [...month.events, event] })),
     deleteEvent: (id) => updateCurrentMonth((month) => ({ ...month, events: month.events.filter((item) => item.id !== id) })),
-    importJson: (raw) => setDatabase((current) => repository.importData(raw, current)),
+    importJson: async (raw) => {
+      const imported = normalizeFinanceDatabaseIds(repository.importData(raw, database));
+      await repository.save(imported);
+      setDatabase(imported);
+    },
     exportJson: (scope) => {
       if (scope === 'month') return repository.exportMonth(database.months[selectedMonth]);
       if (scope === 'year') {
@@ -137,14 +228,13 @@ export function FinanceProvider({ children }: { children: ReactNode }) {
       }
       return repository.exportAll(database);
     },
-    resetDemo: () => { repository.reset(); setDatabase(createDemoDatabase()); setSelectedMonthState('2026-08'); },
+    resetDemo: () => { setDatabase(normalizeFinanceDatabaseIds(createDemoDatabase())); setSelectedMonthState('2026-08'); },
   // eslint-disable-next-line react-hooks/exhaustive-deps
-  }), [database, selectedMonth, showAmounts, changeMonth, setSelectedMonth]);
+  }), [database, selectedMonth, showAmounts, isLoading, persistenceError, changeMonth, setSelectedMonth, persistSnapshot]);
 
   return <FinanceContext.Provider value={value}>{children}</FinanceContext.Provider>;
 }
 
-// Shared hook intentionally lives beside its provider as the module's public API.
 // eslint-disable-next-line react-refresh/only-export-components
 export function useFinance() {
   const value = useContext(FinanceContext);

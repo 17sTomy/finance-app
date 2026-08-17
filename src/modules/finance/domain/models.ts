@@ -25,6 +25,9 @@ export interface Transaction {
   installmentPlanId?: string;
   installmentNumber?: number;
   installmentCount?: number;
+  investmentTicker?: string;
+  investmentQuantity?: number;
+  goalId?: string;
 }
 
 export type RecurrenceDuration =
@@ -69,7 +72,8 @@ export interface InstallmentPlan {
 export interface MonthlyLimit {
   id: string;
   categoryId: string;
-  amount: number;
+  percentage?: number;
+  amount?: number;
   currency: Currency;
 }
 
@@ -77,12 +81,15 @@ export interface GoalContribution {
   id: string;
   amount: number;
   date: string;
+  transactionId?: string;
 }
 
 export interface SavingsGoal {
   id: string;
   name: string;
   targetAmount: number;
+  targetMode?: 'amount' | 'salaryPercentage';
+  salaryPercentage?: number;
   currency: Currency;
   targetDate?: string;
   contributions: GoalContribution[];

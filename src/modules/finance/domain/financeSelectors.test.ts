@@ -2,7 +2,7 @@ import { calculateSummary, expensesByCategory, limitProgress } from './financeSe
 import type { Category, MonthlyFinanceData, Transaction } from './models';
 
 const transactions: Transaction[] = [
-  { id: '1', name: 'Sueldo', amount: 1000, currency: 'ARS', date: '2026-08-01', type: 'income' },
+  { id: '1', name: 'Sueldo', amount: 1000, currency: 'ARS', date: '2026-08-01', type: 'income', recurrenceId: 'salary' },
   { id: '2', name: 'Alquiler', amount: 300, currency: 'ARS', date: '2026-08-05', type: 'expense', expenseType: 'fixed', categoryId: 'home' },
   { id: '3', name: 'Comida', amount: 100, currency: 'ARS', date: '2026-08-06', type: 'expense', expenseType: 'variable', categoryId: 'food' },
   { id: '4', name: 'Ahorro', amount: 150, currency: 'ARS', date: '2026-08-10', type: 'saving', categoryId: 'save' },
@@ -28,6 +28,6 @@ describe('selectores financieros', () => {
 
   it('calcula el progreso de un límite mensual', () => {
     const month: MonthlyFinanceData = { year: 2026, month: 8, transactions, limits: [], events: [], createdAt: '' };
-    expect(limitProgress({ id: 'limit', categoryId: 'food', amount: 80, currency: 'ARS' }, month)).toEqual({ spent: 100, percentage: 125 });
+    expect(limitProgress({ id: 'limit', categoryId: 'food', percentage: 8, currency: 'ARS' }, month)).toEqual({ spent: 100, limitAmount: 80, configuredPercentage: 8, percentage: 125 });
   });
 });

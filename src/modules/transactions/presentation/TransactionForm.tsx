@@ -6,30 +6,40 @@ interface Props { initial?: Transaction; defaultType?: TransactionType; onDone: 
 
 export function TransactionForm({ initial, defaultType = 'expense', onDone }: Props) {
   const { database, selectedMonth, addTransaction, updateTransaction, addInstallmentPlan } = useFinance();
+  const defaultCategoryId = database.categories.find((item) => item.kind === defaultType)?.id ?? database.categories.find((item) => item.kind === 'all')?.id ?? '';
   const [type, setType] = useState<TransactionType>(initial?.type ?? defaultType);
   const [name, setName] = useState(initial?.name ?? '');
   const [amount, setAmount] = useState(initial?.amount ? String(initial.amount) : '');
   const [date, setDate] = useState(initial?.date ?? `${selectedMonth}-15`);
-  const [currency, setCurrency] = useState<Currency>(initial?.currency ?? 'ARS');
-  const [categoryId, setCategoryId] = useState(initial?.categoryId ?? 'other');
+  const [currency, setCurrency] = useState<Currency>(initial?.currency ?? (defaultType === 'saving' ? 'USD' : 'ARS'));
+  const [categoryId, setCategoryId] = useState(initial?.categoryId ?? defaultCategoryId);
   const [notes, setNotes] = useState(initial?.notes ?? '');
+  const [investmentTicker, setInvestmentTicker] = useState(initial?.investmentTicker ?? 'SPY');
+  const [investmentQuantity, setInvestmentQuantity] = useState(initial?.investmentQuantity ? String(initial.investmentQuantity) : '');
   const [installments, setInstallments] = useState(false);
   const [count, setCount] = useState('3');
   const [error, setError] = useState('');
   const categories = database.categories.filter((item) => item.kind === type || item.kind === 'all' || (type === 'expense' && item.kind === 'expense'));
+  const changeType = (next: TransactionType) => {
+    setType(next);
+    setCurrency(next === 'saving' ? 'USD' : 'ARS');
+    setCategoryId(database.categories.find((item) => item.kind === next)?.id ?? database.categories.find((item) => item.kind === 'all')?.id ?? '');
+  };
 
   const submit = (event: FormEvent) => {
     event.preventDefault();
     const numericAmount = Number(amount);
+    const numericQuantity = Number(investmentQuantity);
     const installmentCount = Number(count);
     if (!name.trim()) return setError('Ingresá un nombre.');
     if (!Number.isFinite(numericAmount) || numericAmount <= 0) return setError('El importe debe ser mayor a cero.');
+    if (type === 'investment' && (!Number.isFinite(numericQuantity) || numericQuantity <= 0)) return setError('Ingresá la cantidad de CEDEARs comprados.');
     if (!date || Number.isNaN(new Date(`${date}T12:00:00`).getTime())) return setError('Elegí una fecha válida.');
     if (installments && (!Number.isInteger(installmentCount) || installmentCount < 2 || installmentCount > 120)) return setError('Las cuotas deben ser entre 2 y 120.');
     if (installments && type === 'expense' && !initial) {
       addInstallmentPlan({ description: name.trim(), totalAmount: numericAmount, installmentCount, firstInstallmentDate: date, currency, categoryId, notes: notes.trim() || undefined });
     } else {
-      const value = { name: name.trim(), amount: numericAmount, date, currency, categoryId, notes: notes.trim() || undefined, type, expenseType: type === 'expense' ? initial?.expenseType ?? 'variable' as const : undefined };
+      const value = { name: name.trim(), amount: numericAmount, date, currency: type === 'saving' ? 'USD' as const : type === 'investment' ? 'ARS' as const : currency, categoryId, notes: notes.trim() || undefined, type, expenseType: type === 'expense' ? initial?.expenseType ?? 'variable' as const : undefined, investmentTicker: type === 'investment' ? investmentTicker : undefined, investmentQuantity: type === 'investment' ? numericQuantity : undefined };
       if (initial) updateTransaction({ ...initial, ...value }); else addTransaction(value);
     }
     onDone();
@@ -38,10 +48,11 @@ export function TransactionForm({ initial, defaultType = 'expense', onDone }: Pr
   return <form onSubmit={submit} className="form-grid" noValidate>
     {initial?.recurrenceId && <p className="form-note field--wide">Estás editando solo esta ocurrencia histórica. Para cambiar esta y las siguientes, editá la recurrencia desde Gastos fijos.</p>}
     {initial?.installmentPlanId && <p className="form-note field--wide">Estás editando solo esta cuota. Las demás cuotas mantienen el plan original.</p>}
-    {!initial && <label>Tipo<select value={type} onChange={(event) => { setType(event.target.value as TransactionType); setCategoryId('other'); }}><option value="expense">Gasto</option><option value="income">Ingreso extra</option><option value="saving">Ahorro</option><option value="investment">Inversión</option></select></label>}
-    <label className={!initial ? '' : 'field--wide'}>Nombre<input value={name} onChange={(event) => setName(event.target.value)} placeholder="Ej. Supermercado" autoFocus /></label>
-    <label>Importe<input type="number" inputMode="decimal" min="0.01" step="0.01" value={amount} onChange={(event) => setAmount(event.target.value)} placeholder="0" /></label>
-    <label>Moneda<select value={currency} onChange={(event) => setCurrency(event.target.value as Currency)}><option value="ARS">ARS — Pesos</option><option value="USD">USD — Dólares</option></select></label>
+    {!initial && <label>Tipo<select value={type} onChange={(event) => changeType(event.target.value as TransactionType)}><option value="expense">Gasto</option><option value="income">Ingreso extra</option><option value="saving">Ahorro en dólares</option><option value="investment">Inversión</option></select></label>}
+    <label className={!initial ? '' : 'field--wide'}>Nombre<input value={name} onChange={(event) => setName(event.target.value)} placeholder={type === 'investment' ? 'Ej. Compra SPY' : 'Ej. Supermercado'} autoFocus /></label>
+    <label>{type === 'investment' ? 'Monto invertido' : 'Importe'}<input type="number" inputMode="decimal" min="0.01" step="0.01" value={amount} onChange={(event) => setAmount(event.target.value)} placeholder="0" /></label>
+    <label>Moneda<select value={currency} onChange={(event) => setCurrency(event.target.value as Currency)}>{type === 'saving' ? <option value="USD">USD — Dólares</option> : type === 'investment' ? <option value="ARS">ARS — Pesos</option> : <><option value="ARS">ARS — Pesos</option><option value="USD">USD — Dólares</option></>}</select></label>
+    {type === 'investment' && <><label>CEDEAR<select value={investmentTicker} onChange={(event) => setInvestmentTicker(event.target.value)}><option value="SPY">SPY — S&amp;P 500</option><option value="EWZ">EWZ — Brasil</option></select></label><label>Cantidad<input type="number" min="0.0001" step="0.0001" value={investmentQuantity} onChange={(event) => setInvestmentQuantity(event.target.value)} /></label></>}
     <label>Fecha<input type="date" value={date} onChange={(event) => setDate(event.target.value)} /></label>
     <label>Categoría<select value={categoryId} onChange={(event) => setCategoryId(event.target.value)}>{categories.map((item) => <option key={item.id} value={item.id}>{item.icon} {item.name}</option>)}</select></label>
     {!initial && type === 'expense' && <label className="check-field field--wide"><input type="checkbox" checked={installments} onChange={(event) => setInstallments(event.target.checked)} /><span>Es una compra en cuotas</span></label>}

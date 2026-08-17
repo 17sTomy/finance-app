@@ -1,9 +1,9 @@
 import { addMonths, differenceInCalendarMonths, endOfMonth, format, getDay, isAfter, isBefore, isSameMonth, parseISO, setDate, startOfMonth } from 'date-fns';
-import type { FixedExpense, InstallmentPlan, RecurringIncome, Transaction } from './models';
+import type { FinanceDatabase, FixedExpense, InstallmentPlan, RecurringIncome, Transaction } from './models';
 
-export function firstBusinessDay(year: number, month: number): Date {
+export function firstBusinessDay(year: number, month: number, holidayDates: ReadonlySet<string> = new Set()): Date {
   let date = new Date(year, month - 1, 1, 12);
-  while (getDay(date) === 0 || getDay(date) === 6) date = new Date(year, month - 1, date.getDate() + 1, 12);
+  while (getDay(date) === 0 || getDay(date) === 6 || holidayDates.has(format(date, 'yyyy-MM-dd'))) date = new Date(year, month - 1, date.getDate() + 1, 12);
   return date;
 }
 
@@ -34,10 +34,27 @@ export function projectFixedExpense(expense: FixedExpense, year: number, month: 
   };
 }
 
-export function projectSalary(income: RecurringIncome, year: number, month: number): Transaction | null {
-  const date = firstBusinessDay(year, month);
+export function projectSalary(income: RecurringIncome, year: number, month: number, holidayDates: ReadonlySet<string> = new Set()): Transaction | null {
+  const date = firstBusinessDay(year, month, holidayDates);
   if (!income.active || isBefore(endOfMonth(date), parseISO(income.startDate))) return null;
   return { id: `income-${income.id}-${format(date, 'yyyy-MM')}`, name: income.name, amount: income.amount, currency: income.currency, date: format(date, 'yyyy-MM-dd'), type: 'income', recurrenceId: income.id };
+}
+
+export function synchronizeSalaryDates(database: FinanceDatabase, year: number, holidayDates: ReadonlySet<string>): FinanceDatabase {
+  const recurringIds = new Set(database.recurringIncomes.map((item) => item.id));
+  return {
+    ...database,
+    months: Object.fromEntries(Object.entries(database.months).map(([key, month]) => {
+      if (month.year !== year) return [key, month];
+      const transactions = month.transactions.map((transaction) => {
+        if (!transaction.recurrenceId || !recurringIds.has(transaction.recurrenceId) || transaction.type !== 'income') return transaction;
+        const income = database.recurringIncomes.find((item) => item.id === transaction.recurrenceId);
+        const projected = income ? projectSalary(income, month.year, month.month, holidayDates) : null;
+        return projected ? { ...transaction, date: projected.date } : transaction;
+      });
+      return [key, { ...month, transactions }];
+    })),
+  };
 }
 
 export function generateInstallments(plan: InstallmentPlan): Transaction[] {

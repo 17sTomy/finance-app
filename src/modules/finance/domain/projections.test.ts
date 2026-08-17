@@ -6,6 +6,7 @@ describe('proyecciones', () => {
   it('encuentra el primer día hábil sin acoplar feriados', () => {
     expect(format(firstBusinessDay(2026, 8), 'yyyy-MM-dd')).toBe('2026-08-03');
     expect(format(firstBusinessDay(2026, 9), 'yyyy-MM-dd')).toBe('2026-09-01');
+    expect(format(firstBusinessDay(2026, 1, new Set(['2026-01-01'])), 'yyyy-MM-dd')).toBe('2026-01-02');
   });
 
   it('genera cuotas vinculadas y preserva el total exacto', () => {
