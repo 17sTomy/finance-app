@@ -1,6 +1,7 @@
 import { useState, type FormEvent } from 'react';
 import { useFinance } from '../../../app/providers/FinanceProvider';
 import type { Currency, Transaction, TransactionType } from '../../finance/domain/models';
+import { todayISO } from '../../../shared/utils/dates';
 
 interface Props { initial?: Transaction; defaultType?: TransactionType; onDone: () => void }
 
@@ -10,7 +11,7 @@ export function TransactionForm({ initial, defaultType = 'expense', onDone }: Pr
   const [type, setType] = useState<TransactionType>(initial?.type ?? defaultType);
   const [name, setName] = useState(initial?.name ?? '');
   const [amount, setAmount] = useState(initial?.amount ? String(initial.amount) : '');
-  const [date, setDate] = useState(initial?.date ?? `${selectedMonth}-15`);
+  const [date, setDate] = useState(initial?.date ?? (todayISO().startsWith(selectedMonth) ? todayISO() : `${selectedMonth}-01`));
   const [currency, setCurrency] = useState<Currency>(initial?.currency ?? (defaultType === 'saving' ? 'USD' : 'ARS'));
   const [categoryId, setCategoryId] = useState(initial?.categoryId ?? defaultCategoryId);
   const [notes, setNotes] = useState(initial?.notes ?? '');

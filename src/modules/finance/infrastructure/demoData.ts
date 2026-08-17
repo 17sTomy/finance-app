@@ -57,10 +57,10 @@ function tx(id: string, name: string, amount: number, date: string, type: Transa
   return { id, name, amount, date, type, categoryId, currency: 'ARS', expenseType: type === 'expense' ? 'variable' : undefined };
 }
 
-export function createMonth(year: number, month: number, database: Pick<FinanceDatabase, 'fixedExpenses' | 'recurringIncomes' | 'installmentPlans'>, includeDemoTransactions = false): MonthlyFinanceData {
+export function createMonth(year: number, month: number, database: Pick<FinanceDatabase, 'fixedExpenses' | 'recurringIncomes' | 'installmentPlans'>, includeDemoTransactions = false, fixedExpensesDueBy?: string): MonthlyFinanceData {
   const key = `${year}-${String(month).padStart(2, '0')}`;
   const generated = [
-    ...database.fixedExpenses.map((item) => projectFixedExpense(item, year, month)),
+    ...database.fixedExpenses.map((item) => projectFixedExpense(item, year, month, fixedExpensesDueBy)),
     ...database.recurringIncomes.map((item) => projectSalary(item, year, month, getCachedHolidayDates(year))),
     ...database.installmentPlans.map((item) => installmentForMonth(item, year, month)),
   ].filter((item): item is Transaction => item !== null && item !== undefined);

@@ -9,6 +9,7 @@ import { addGoalContribution } from '../../modules/finance/domain/financeOperati
 import { createDemoDatabase, createMonth } from '../../modules/finance/infrastructure/demoData';
 import { getCachedHolidayDates, loadArgentinaHolidayDates } from '../../modules/finance/infrastructure/argentinaHolidays';
 import { useAuth } from './AuthProvider';
+import { todayISO } from '../../shared/utils/dates';
 
 interface FinanceContextValue {
   database: FinanceDatabase;
@@ -49,10 +50,23 @@ const FinanceContext = createContext<FinanceContextValue | null>(null);
 const currentMonth = () => format(new Date(), 'yyyy-MM');
 const emptyDatabase = (): FinanceDatabase => ({ version: 1, months: {}, categories: [], fixedExpenses: [], recurringIncomes: [], installmentPlans: [], goals: [] });
 
-function ensureDatabaseMonth(source: FinanceDatabase, key: string) {
-  if (source.months[key]) return source;
+function synchronizeDueFixedExpensesForMonth(source: FinanceDatabase, key: string, dueBy = todayISO()): FinanceDatabase {
   const [year, month] = key.split('-').map(Number);
-  return { ...source, months: { ...source.months, [key]: createMonth(year, month, source) } };
+  const snapshot = source.months[key] ?? createMonth(year, month, source, false, dueBy);
+  const existingFixedIds = new Set(snapshot.transactions.filter((item) => item.recurrenceId && item.expenseType === 'fixed' && item.date <= dueBy).map((item) => item.recurrenceId));
+  const dueFixedTransactions = source.fixedExpenses
+    .filter((item) => !existingFixedIds.has(item.id))
+    .map((item) => projectFixedExpense(item, year, month, dueBy))
+    .filter((item): item is Transaction => item !== null);
+  const transactions = [
+    ...snapshot.transactions.filter((item) => !(item.recurrenceId && item.expenseType === 'fixed' && item.date > dueBy)),
+    ...dueFixedTransactions,
+  ];
+  return { ...source, months: { ...source.months, [key]: { ...snapshot, transactions } } };
+}
+
+function ensureDatabaseMonth(source: FinanceDatabase, key: string) {
+  return synchronizeDueFixedExpensesForMonth(source, key);
 }
 
 export function FinanceProvider({ children }: { children: ReactNode }) {
@@ -141,7 +155,7 @@ export function FinanceProvider({ children }: { children: ReactNode }) {
   const value = useMemo<FinanceContextValue>(() => ({
     database,
     selectedMonth,
-    monthData: database.months[selectedMonth] ?? createMonth(...selectedMonth.split('-').map(Number) as [number, number], database),
+    monthData: database.months[selectedMonth] ?? createMonth(...selectedMonth.split('-').map(Number) as [number, number], database, false, todayISO()),
     showAmounts,
     isLoading,
     persistenceError,
@@ -157,7 +171,7 @@ export function FinanceProvider({ children }: { children: ReactNode }) {
       const fixedExpenses = exists ? current.fixedExpenses.map((item) => item.id === expense.id ? expense : item) : [...current.fixedExpenses, expense];
       const snapshot = current.months[selectedMonth];
       const [year, month] = selectedMonth.split('-').map(Number);
-      const projected = projectFixedExpense(expense, year, month);
+      const projected = projectFixedExpense(expense, year, month, todayISO());
       if (!snapshot || !projected) return { ...current, fixedExpenses };
       const transactions = [...snapshot.transactions.filter((item) => item.recurrenceId !== expense.id), projected];
       return { ...current, fixedExpenses, months: { ...current.months, [selectedMonth]: { ...snapshot, transactions } } };

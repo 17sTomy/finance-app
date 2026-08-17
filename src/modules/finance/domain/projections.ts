@@ -17,15 +17,17 @@ export function isFixedExpenseActive(expense: FixedExpense, year: number, month:
   return !isAfter(target, endOfMonth(parseISO(expense.duration.endDate)));
 }
 
-export function projectFixedExpense(expense: FixedExpense, year: number, month: number): Transaction | null {
+export function projectFixedExpense(expense: FixedExpense, year: number, month: number, dueBy?: string): Transaction | null {
   if (!isFixedExpenseActive(expense, year, month)) return null;
   const dueDate = setDate(new Date(year, month - 1, 1, 12), Math.min(expense.dueDay, endOfMonth(new Date(year, month - 1, 1)).getDate()));
+  const dueDateISO = format(dueDate, 'yyyy-MM-dd');
+  if (dueBy && dueDateISO > dueBy) return null;
   return {
     id: `fixed-${expense.id}-${format(dueDate, 'yyyy-MM')}`,
     name: expense.name,
     amount: expense.amount,
     currency: expense.currency,
-    date: format(dueDate, 'yyyy-MM-dd'),
+    date: dueDateISO,
     type: 'expense',
     expenseType: 'fixed',
     categoryId: expense.categoryId,

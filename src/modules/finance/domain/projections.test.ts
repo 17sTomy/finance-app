@@ -23,4 +23,10 @@ describe('proyecciones', () => {
     expect(isFixedExpenseActive(expense, 2026, 3)).toBe(false);
     expect(projectFixedExpense(expense, 2026, 2)?.date).toBe('2026-02-28');
   });
+
+  it('no materializa un gasto fijo como movimiento antes de su vencimiento', () => {
+    const expense: FixedExpense = { id: 'fixed', name: 'Internet', amount: 333333, currency: 'ARS', categoryId: 'other', startDate: '2026-08-01', dueDay: 18, duration: { type: 'unlimited' }, reminderEnabled: true, active: true };
+    expect(projectFixedExpense(expense, 2026, 8, '2026-08-17')).toBeNull();
+    expect(projectFixedExpense(expense, 2026, 8, '2026-08-18')).toMatchObject({ amount: 333333, date: '2026-08-18' });
+  });
 });
