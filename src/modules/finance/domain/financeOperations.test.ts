@@ -1,5 +1,5 @@
 import { createDemoDatabase } from '../infrastructure/demoData';
-import { addGoalContribution } from './financeOperations';
+import { addGoalContribution, deleteTransactionCascade } from './financeOperations';
 import { calculateSummary, goalTotal } from './financeSelectors';
 
 describe('operaciones financieras sincronizadas', () => {
@@ -12,5 +12,12 @@ describe('operaciones financieras sincronizadas', () => {
     expect(goalTotal(goal.contributions)).toBe(610000);
     expect(movement).toMatchObject({ amount: 10000, type: 'saving', goalId: 'trip', date: '2026-08-18' });
     expect(calculateSummary(result.months['2026-08'].transactions).balance).toBe(before - 10000);
+  });
+
+  it('elimina el plan completo cuando se borra cualquiera de sus cuotas', () => {
+    const database = createDemoDatabase();
+    const result = deleteTransactionCascade(database, 'installment-notebook-plan-4');
+    expect(result.installmentPlans.some((plan) => plan.id === 'notebook-plan')).toBe(false);
+    expect(Object.values(result.months).flatMap((month) => month.transactions).some((item) => item.installmentPlanId === 'notebook-plan')).toBe(false);
   });
 });

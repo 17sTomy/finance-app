@@ -5,6 +5,8 @@ export interface FinanceSummary {
   expenses: number;
   fixedExpenses: number;
   variableExpenses: number;
+  assetPurchases: number;
+  assetSales: number;
   savings: number;
   investments: number;
   balance: number;
@@ -13,20 +15,37 @@ export interface FinanceSummary {
 export const transactionsForCurrency = (transactions: Transaction[], currency: Currency) =>
   transactions.filter((transaction) => transaction.currency === currency);
 
+const isAsset = (transaction: Transaction) => transaction.type === 'saving' || transaction.type === 'investment';
+const assetDirection = (transaction: Transaction) => transaction.assetAction === 'sell' ? -1 : 1;
+
+export function transactionAmountInCurrency(transaction: Transaction, currency: Currency): number {
+  if (transaction.currency === currency) return transaction.amount;
+  if (currency === 'ARS' && transaction.type === 'saving' && transaction.currency === 'USD' && transaction.exchangeRate) {
+    return transaction.amount * transaction.exchangeRate;
+  }
+  return 0;
+}
+
 export function calculateSummary(transactions: Transaction[], currency: Currency = 'ARS'): FinanceSummary {
   const values = transactionsForCurrency(transactions, currency);
   const income = sumByType(values, 'income');
-  const expenses = sumByType(values, 'expense');
-  const savings = sumByType(values, 'saving');
-  const investments = sumByType(values, 'investment');
+  const ordinaryExpenses = sumByType(values, 'expense');
+  const assetTransactions = transactions.filter(isAsset).map((item) => ({ item, amount: transactionAmountInCurrency(item, currency) })).filter(({ amount }) => amount > 0);
+  const assetPurchases = assetTransactions.filter(({ item }) => item.assetAction !== 'sell').reduce((sum, { amount }) => sum + amount, 0);
+  const assetSales = assetTransactions.filter(({ item }) => item.assetAction === 'sell').reduce((sum, { amount }) => sum + amount, 0);
+  const savings = assetTransactions.filter(({ item }) => item.type === 'saving').reduce((sum, { item, amount }) => sum + assetDirection(item) * amount, 0);
+  const investments = assetTransactions.filter(({ item }) => item.type === 'investment').reduce((sum, { item, amount }) => sum + assetDirection(item) * amount, 0);
+  const expenses = ordinaryExpenses + assetPurchases;
   return {
     income,
     expenses,
     fixedExpenses: values.filter((item) => item.type === 'expense' && item.expenseType === 'fixed').reduce(sumAmount, 0),
     variableExpenses: values.filter((item) => item.type === 'expense' && item.expenseType !== 'fixed').reduce(sumAmount, 0),
+    assetPurchases,
+    assetSales,
     savings,
     investments,
-    balance: income - expenses - savings - investments,
+    balance: income + assetSales - expenses,
   };
 }
 
@@ -44,8 +63,10 @@ export function expensesByCategory(
 ): CategoryTotal[] {
   const sums = new Map<string, number>();
   transactions
-    .filter((item) => included.includes(item.type) && item.currency === currency)
-    .forEach((item) => sums.set(item.categoryId ?? 'other', (sums.get(item.categoryId ?? 'other') ?? 0) + item.amount));
+    .filter((item) => included.includes(item.type) && (!isAsset(item) || item.assetAction !== 'sell'))
+    .map((item) => ({ item, amount: transactionAmountInCurrency(item, currency) }))
+    .filter(({ amount }) => amount > 0)
+    .forEach(({ item, amount }) => sums.set(item.categoryId ?? 'other', (sums.get(item.categoryId ?? 'other') ?? 0) + amount));
   return [...sums.entries()]
     .map(([id, value]) => {
       const category = categories.find((item) => item.id === id);
@@ -79,18 +100,27 @@ export const goalTargetAmount = (goal: SavingsGoal, month: MonthlyFinanceData) =
 
 export interface InvestmentHolding { ticker: string; quantity: number; investedAmount: number }
 
-export function investmentHoldings(database: FinanceDatabase, throughMonth: string): InvestmentHolding[] {
+export function investmentHoldings(database: FinanceDatabase, throughMonth: string, excludedTransactionId?: string): InvestmentHolding[] {
   const holdings = new Map<string, InvestmentHolding>();
   Object.entries(database.months)
     .filter(([key]) => key <= throughMonth)
     .flatMap(([, month]) => month.transactions)
-    .filter((item) => item.type === 'investment' && item.currency === 'ARS')
+    .filter((item) => item.id !== excludedTransactionId && item.type === 'investment' && item.currency === 'ARS')
     .forEach((item) => {
       const ticker = item.investmentTicker?.toUpperCase() ?? 'SIN TICKER';
       const current = holdings.get(ticker) ?? { ticker, quantity: 0, investedAmount: 0 };
-      holdings.set(ticker, { ticker, quantity: current.quantity + (item.investmentQuantity ?? 0), investedAmount: current.investedAmount + item.amount });
+      const direction = assetDirection(item);
+      holdings.set(ticker, { ticker, quantity: current.quantity + direction * (item.investmentQuantity ?? 0), investedAmount: current.investedAmount + direction * item.amount });
     });
-  return [...holdings.values()];
+  return [...holdings.values()].filter((holding) => holding.quantity > 0.000001);
+}
+
+export function dollarSavingsBalance(database: FinanceDatabase, throughMonth: string, excludedTransactionId?: string): number {
+  return Object.entries(database.months)
+    .filter(([key]) => key <= throughMonth)
+    .flatMap(([, month]) => month.transactions)
+    .filter((item) => item.id !== excludedTransactionId && item.type === 'saving' && item.currency === 'USD' && !item.goalId)
+    .reduce((total, item) => total + assetDirection(item) * item.amount, 0);
 }
 
 export function dailyBalance(transactions: Transaction[], currency: Currency = 'ARS') {

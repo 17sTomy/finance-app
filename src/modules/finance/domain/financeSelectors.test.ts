@@ -1,4 +1,4 @@
-import { calculateSummary, expensesByCategory, limitProgress } from './financeSelectors';
+import { calculateSummary, dollarSavingsBalance, expensesByCategory, investmentHoldings, limitProgress } from './financeSelectors';
 import type { Category, MonthlyFinanceData, Transaction } from './models';
 
 const transactions: Transaction[] = [
@@ -12,8 +12,33 @@ const transactions: Transaction[] = [
 
 describe('selectores financieros', () => {
   it('calcula el balance sin mezclar monedas ni contar dos veces', () => {
-    expect(calculateSummary(transactions)).toEqual({ income: 1000, expenses: 400, fixedExpenses: 300, variableExpenses: 100, savings: 150, investments: 50, balance: 400 });
+    expect(calculateSummary(transactions)).toEqual({ income: 1000, expenses: 600, fixedExpenses: 300, variableExpenses: 100, assetPurchases: 200, assetSales: 0, savings: 150, investments: 50, balance: 400 });
     expect(calculateSummary(transactions, 'USD').balance).toBe(-25);
+  });
+
+  it('convierte compras y ventas de dólares a pesos y conserva la tenencia entre meses', () => {
+    const database = {
+      version: 1 as const, categories: [], fixedExpenses: [], recurringIncomes: [], installmentPlans: [], goals: [],
+      months: {
+        '2026-07': { year: 2026, month: 7, limits: [], events: [], createdAt: '', transactions: [{ id: 'buy-usd', name: 'Compra USD', amount: 100, currency: 'USD' as const, exchangeRate: 1500, assetAction: 'buy' as const, date: '2026-07-10', type: 'saving' as const }] },
+        '2026-08': { year: 2026, month: 8, limits: [], events: [], createdAt: '', transactions: [{ id: 'sell-usd', name: 'Venta USD', amount: 25, currency: 'USD' as const, exchangeRate: 1600, assetAction: 'sell' as const, date: '2026-08-10', type: 'saving' as const }] },
+      },
+    };
+    expect(calculateSummary(database.months['2026-07'].transactions)).toMatchObject({ expenses: 150000, savings: 150000, balance: -150000 });
+    expect(calculateSummary(database.months['2026-08'].transactions)).toMatchObject({ assetSales: 40000, savings: -40000, balance: 40000 });
+    expect(dollarSavingsBalance(database, '2026-08')).toBe(75);
+  });
+
+  it('acumula CEDEARs y descuenta las ventas de la tenencia', () => {
+    const database = {
+      version: 1 as const, categories: [], fixedExpenses: [], recurringIncomes: [], installmentPlans: [], goals: [],
+      months: { '2026-08': { year: 2026, month: 8, limits: [], events: [], createdAt: '', transactions: [
+        { id: 'buy', name: 'Compra', amount: 100000, currency: 'ARS' as const, assetAction: 'buy' as const, investmentTicker: 'AAPL', investmentQuantity: 10, date: '2026-08-01', type: 'investment' as const },
+        { id: 'sell', name: 'Venta', amount: 24000, currency: 'ARS' as const, assetAction: 'sell' as const, investmentTicker: 'AAPL', investmentQuantity: 2, date: '2026-08-15', type: 'investment' as const },
+      ] } },
+    };
+    expect(investmentHoldings(database, '2026-08')).toEqual([{ ticker: 'AAPL', quantity: 8, investedAmount: 76000 }]);
+    expect(calculateSummary(database.months['2026-08'].transactions)).toMatchObject({ expenses: 100000, assetSales: 24000, balance: -76000 });
   });
 
   it('agrupa por categoría y permite incluir otros egresos', () => {

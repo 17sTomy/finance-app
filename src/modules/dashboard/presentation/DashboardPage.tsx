@@ -3,8 +3,9 @@ import { useEffect, useMemo, useState } from 'react';
 import { Link } from 'react-router-dom';
 import { Cell, Pie, PieChart, ResponsiveContainer, Tooltip } from 'recharts';
 import { useFinance } from '../../../app/providers/FinanceProvider';
-import { calculateSummary, expensesByCategory, goalSavedAmount, goalTargetAmount, investmentHoldings, limitProgress } from '../../finance/domain/financeSelectors';
-import type { TransactionType } from '../../finance/domain/models';
+import { calculateSummary, dollarSavingsBalance, expensesByCategory, goalSavedAmount, goalTargetAmount, investmentHoldings, limitProgress } from '../../finance/domain/financeSelectors';
+import type { Transaction, TransactionType } from '../../finance/domain/models';
+import { projectFixedExpense } from '../../finance/domain/projections';
 import { fetchCedearQuotes, type CedearQuote } from '../../investments/infrastructure/marketData';
 import { Card, SectionHeader } from '../../../shared/components/Card';
 import { MoneyValue } from '../../../shared/components/MoneyValue';
@@ -12,6 +13,12 @@ import { Modal } from '../../../shared/components/Modal';
 import { ProgressBar } from '../../../shared/components/ProgressBar';
 import { TransactionForm } from '../../transactions/presentation/TransactionForm';
 import { formatShortDate } from '../../../shared/utils/format';
+import { todayISO } from '../../../shared/utils/dates';
+
+const isIncoming = (item: Transaction) => item.type === 'income' || ((item.type === 'saving' || item.type === 'investment') && item.assetAction === 'sell');
+const displayedMovement = (item: Transaction) => item.type === 'saving' && item.exchangeRate
+  ? { value: (item.assetAction === 'sell' ? 1 : -1) * item.amount * item.exchangeRate, currency: 'ARS' as const }
+  : { value: isIncoming(item) ? item.amount : -item.amount, currency: item.currency };
 
 export function DashboardPage() {
   const { database, monthData, selectedMonth } = useFinance();
@@ -21,7 +28,7 @@ export function DashboardPage() {
   const [quotes, setQuotes] = useState<CedearQuote[]>([]);
   const [quoteUpdatedAt, setQuoteUpdatedAt] = useState('');
   const summary = calculateSummary(monthData.transactions);
-  const usdSummary = calculateSummary(monthData.transactions, 'USD');
+  const dollarBalance = dollarSavingsBalance(database, selectedMonth);
   const previousDate = new Date(`${selectedMonth}-01T12:00:00`); previousDate.setMonth(previousDate.getMonth() - 1);
   const previous = database.months[`${previousDate.getFullYear()}-${String(previousDate.getMonth() + 1).padStart(2, '0')}`];
   const previousSummary = previous ? calculateSummary(previous.transactions) : null;
@@ -41,9 +48,13 @@ export function DashboardPage() {
   const quoteByTicker = new Map(quotes.map((quote) => [quote.ticker, quote]));
   const investmentValue = holdings.reduce((total, holding) => {
     const price = quoteByTicker.get(holding.ticker)?.price;
-    return total + (price && holding.quantity > 0 ? price * holding.quantity : holding.investedAmount);
+    return total + (price && holding.quantity > 0 ? price * holding.quantity : Math.max(holding.investedAmount, 0));
   }, 0);
-  const upcoming = monthData.transactions.filter((item) => item.expenseType === 'fixed' && item.recurrenceId).sort((a, b) => a.date.localeCompare(b.date));
+  const upcoming = database.fixedExpenses
+    .map((item) => projectFixedExpense(item, monthData.year, monthData.month))
+    .filter((item): item is Transaction => item !== null && item.date >= todayISO())
+    .sort((a, b) => a.date.localeCompare(b.date));
+  const monthMovements = [...monthData.transactions].sort((a, b) => b.date.localeCompare(a.date));
   const openForm = (type: TransactionType) => { setDefaultType(type); setFormOpen(true); };
 
   return <>
@@ -51,8 +62,8 @@ export function DashboardPage() {
     <div className="summary-grid">
       <Card accent className="balance-card"><div className="card-label"><span>Balance disponible</span><Wallet size={19} /></div><MoneyValue value={summary.balance} className="hero-money" /><div className="trend-pill"><TrendingUp size={14} /> {change >= 0 ? '+' : ''}{change.toFixed(1)}% vs. mes anterior</div><div className="balance-orb balance-orb--one" /><div className="balance-orb balance-orb--two" /></Card>
       <Card><div className="card-label"><span>Ingresos</span><span className="soft-icon soft-icon--green"><ArrowUpRight size={18} /></span></div><MoneyValue value={summary.income} className="summary-money" /><div className="mini-breakdown"><span>Sueldo</span><MoneyValue value={monthData.transactions.filter((item) => item.type === 'income' && !!item.recurrenceId).reduce((sum, item) => sum + item.amount, 0)} /><span>Extras</span><MoneyValue value={monthData.transactions.filter((item) => item.type === 'income' && !item.recurrenceId).reduce((sum, item) => sum + item.amount, 0)} /></div></Card>
-      <Card><div className="card-label"><span>Gastos</span><span className="soft-icon soft-icon--coral"><ArrowDownRight size={18} /></span></div><MoneyValue value={summary.expenses} className="summary-money" /><div className="mini-breakdown"><span>Fijos</span><MoneyValue value={summary.fixedExpenses} /><span>Variables</span><MoneyValue value={summary.variableExpenses} /></div></Card>
-      <Card className="savings-summary"><div className="metric-row"><span className="soft-icon soft-icon--green"><PiggyBank size={19} /></span><div><small>Ahorro USD</small><MoneyValue value={usdSummary.savings} currency="USD" /></div></div><div className="metric-row"><span className="soft-icon soft-icon--blue"><Landmark size={19} /></span><div><small>Inversiones · valor actual</small><MoneyValue value={investmentValue} /></div></div>{holdings.length > 0 && <div className="portfolio-prices">{holdings.filter((item) => item.ticker !== 'SIN TICKER').map((holding) => { const quote = quoteByTicker.get(holding.ticker); return <span key={holding.ticker}><strong>{holding.ticker}</strong> {quote ? <MoneyValue value={quote.price} /> : 'costo registrado'}</span>; })}<small>{quoteUpdatedAt ? `Último precio disponible · ${quoteUpdatedAt}` : 'Cotización no disponible · se usa el costo registrado'}</small></div>}<div className="summary-actions"><button className="text-button" onClick={() => openForm('saving')}>+ Ahorro USD</button><button className="text-button" onClick={() => openForm('investment')}>+ Inversión</button></div></Card>
+      <Card><div className="card-label"><span>Gastos</span><span className="soft-icon soft-icon--coral"><ArrowDownRight size={18} /></span></div><MoneyValue value={summary.expenses} className="summary-money" /><div className="mini-breakdown"><span>Fijos</span><MoneyValue value={summary.fixedExpenses} /><span>Variables</span><MoneyValue value={summary.variableExpenses} /><span>Compras de activos</span><MoneyValue value={summary.assetPurchases} /></div></Card>
+      <Card className="savings-summary"><div className="metric-row"><span className="soft-icon soft-icon--green"><PiggyBank size={19} /></span><div><small>Tenencia acumulada USD</small><MoneyValue value={dollarBalance} currency="USD" /></div></div><div className="metric-row"><span className="soft-icon soft-icon--blue"><Landmark size={19} /></span><div><small>CEDEARs · valor actual</small><MoneyValue value={investmentValue} /></div></div>{holdings.length > 0 && <div className="portfolio-prices">{holdings.filter((item) => item.ticker !== 'SIN TICKER').map((holding) => { const quote = quoteByTicker.get(holding.ticker); return <span key={holding.ticker}><strong>{holding.ticker}</strong> · {holding.quantity.toLocaleString('es-AR')} u. · {quote ? <MoneyValue value={quote.price} /> : 'costo registrado'}</span>; })}<small>{quoteUpdatedAt ? `Último precio disponible · ${quoteUpdatedAt}` : 'Cotización no disponible · se usa el costo registrado'}</small></div>}<div className="summary-actions"><button className="text-button" onClick={() => openForm('saving')}>Comprar/vender USD</button><button className="text-button" onClick={() => openForm('investment')}>Comprar/vender CEDEAR</button></div></Card>
     </div>
 
     <div className="dashboard-main-grid">
@@ -63,7 +74,8 @@ export function DashboardPage() {
       </div>
     </div>
 
-    <Card className="upcoming-card"><SectionHeader title="Próximos pagos" action={<Link to="/fijos" className="text-button">Ver gastos fijos</Link>} /><div className="upcoming-grid">{upcoming.map((item) => <div key={item.id} className="upcoming-item"><span className="category-icon">{database.categories.find((cat) => cat.id === item.categoryId)?.icon ?? '•'}</span><div><strong>{item.name}</strong><small><BellRing size={13} /> Vence {formatShortDate(item.date)}</small></div><MoneyValue value={item.amount} currency={item.currency} /></div>)}</div></Card>
+    <Card className="upcoming-card"><SectionHeader title="Próximos pagos" action={<Link to="/fijos" className="text-button">Ver gastos fijos</Link>} />{upcoming.length === 0 ? <p className="muted compact-empty">No quedan pagos fijos por vencer en el período seleccionado.</p> : <div className="upcoming-grid">{upcoming.map((item) => <div key={item.id} className="upcoming-item"><span className="category-icon">{database.categories.find((cat) => cat.id === item.categoryId)?.icon ?? '•'}</span><div><strong>{item.name}</strong><small><BellRing size={13} /> Vence {formatShortDate(item.date)}</small></div><MoneyValue value={item.amount} currency={item.currency} /></div>)}</div>}</Card>
+    <Card className="month-movements-card"><SectionHeader title="Movimientos del mes" action={<Link to="/movimientos" className="text-button">Abrir movimientos</Link>} />{monthMovements.length === 0 ? <p className="muted compact-empty">Todavía no hay movimientos registrados en este mes.</p> : <div className="month-movements">{monthMovements.map((item) => <div className="month-movement-row" key={item.id}><span className={`transaction-icon transaction-icon--${item.type}`}>{isIncoming(item) ? <ArrowUpRight size={17} /> : <ArrowDownRight size={17} />}</span><div><strong>{item.name}</strong><small>{formatShortDate(item.date)}{item.installmentNumber ? ` · Cuota ${item.installmentNumber}/${item.installmentCount}` : ''}{item.investmentTicker ? ` · ${item.investmentQuantity} ${item.investmentTicker}` : ''}{item.exchangeRate ? ` · USD ${item.amount.toLocaleString('es-AR')}` : ''}</small></div><MoneyValue value={displayedMovement(item).value} currency={displayedMovement(item).currency} signed /></div>)}</div>}</Card>
     <Modal open={formOpen} title="Nuevo movimiento" onClose={() => setFormOpen(false)}><TransactionForm defaultType={defaultType} onDone={() => setFormOpen(false)} /></Modal>
   </>;
 }

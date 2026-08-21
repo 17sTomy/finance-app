@@ -2,6 +2,7 @@ export type Currency = 'ARS' | 'USD';
 export type TransactionType = 'income' | 'expense' | 'saving' | 'investment';
 export type ExpenseType = 'fixed' | 'variable';
 export type CategoryKind = TransactionType | 'all';
+export type AssetAction = 'buy' | 'sell';
 
 export interface Category {
   id: string;
@@ -27,6 +28,8 @@ export interface Transaction {
   installmentCount?: number;
   investmentTicker?: string;
   investmentQuantity?: number;
+  assetAction?: AssetAction;
+  exchangeRate?: number;
   goalId?: string;
 }
 

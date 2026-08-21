@@ -35,3 +35,21 @@ export function addGoalContribution(
     },
   };
 }
+
+export function deleteTransactionCascade(database: FinanceDatabase, transactionId: string): FinanceDatabase {
+  const transaction = Object.values(database.months).flatMap((month) => month.transactions).find((item) => item.id === transactionId);
+  if (!transaction) return database;
+  const planId = transaction.installmentPlanId;
+  return {
+    ...database,
+    installmentPlans: planId ? database.installmentPlans.filter((plan) => plan.id !== planId) : database.installmentPlans,
+    goals: database.goals.map((goal) => ({
+      ...goal,
+      contributions: goal.contributions.map((contribution) => contribution.transactionId === transactionId ? { ...contribution, transactionId: undefined } : contribution),
+    })),
+    months: Object.fromEntries(Object.entries(database.months).map(([key, month]) => [key, {
+      ...month,
+      transactions: month.transactions.filter((item) => planId ? item.installmentPlanId !== planId : item.id !== transactionId),
+    }])),
+  };
+}

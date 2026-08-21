@@ -104,7 +104,9 @@ export function rowsToFinanceDatabase(rows: FinanceRows): FinanceDatabase {
       notes: row.notes ?? undefined, recurrenceId: row.fixed_expense_id ?? row.recurring_income_id ?? undefined,
       installmentPlanId: row.installment_plan_id ?? undefined, installmentNumber: row.installment_number ?? undefined,
       installmentCount: row.installment_count ?? undefined, investmentTicker: row.investment_ticker ?? undefined,
-      investmentQuantity: row.investment_quantity === null ? undefined : Number(row.investment_quantity), goalId: row.goal_id ?? undefined,
+      investmentQuantity: row.investment_quantity === null ? undefined : Number(row.investment_quantity),
+      assetAction: row.asset_action === 'sell' ? 'sell' : row.asset_action === 'buy' ? 'buy' : undefined,
+      exchangeRate: row.exchange_rate == null ? undefined : Number(row.exchange_rate), goalId: row.goal_id ?? undefined,
     };
     ensureMonth(row.transaction_date.slice(0, 7), row.created_at).transactions.push(transaction);
   });
@@ -195,7 +197,8 @@ export function financeDatabaseToPayload(input: FinanceDatabase): FinancePersist
       fixed_expense_id: item.type !== 'income' ? item.recurrenceId ?? null : null,
       recurring_income_id: item.type === 'income' ? item.recurrenceId ?? null : null,
       installment_plan_id: item.installmentPlanId ?? null, installment_number: item.installmentNumber ?? null, installment_count: item.installmentCount ?? null,
-      investment_ticker: item.investmentTicker ?? null, investment_quantity: item.investmentQuantity ?? null, goal_id: item.goalId ?? null,
+      investment_ticker: item.investmentTicker ?? null, investment_quantity: item.investmentQuantity ?? null,
+      asset_action: item.assetAction ?? null, exchange_rate: item.exchangeRate ?? null, goal_id: item.goalId ?? null,
     })),
     monthly_limits: Object.entries(database.months).flatMap(([key, month]) => month.limits.map((item) => ({
       id: item.id, month: `${key}-01`, category_id: item.categoryId, percentage: item.percentage ?? null, amount: item.amount ?? null, currency: item.currency,

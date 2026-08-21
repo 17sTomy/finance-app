@@ -15,6 +15,7 @@ describe('finance persistence mappers', () => {
     expect(payload.transactions.every((item) => item.category_id === null || categoryIds.has(item.category_id))).toBe(true);
     expect(payload.goal_contributions.every((item) => item.transaction_id === null || transactionIds.has(item.transaction_id))).toBe(true);
     expect(payload.transactions.some((item) => item.investment_ticker === 'SPY')).toBe(true);
+    expect(payload.transactions.every((item) => 'asset_action' in item && 'exchange_rate' in item)).toBe(true);
     expect(payload.categories.every((item) => !('user_id' in item))).toBe(true);
     const foreignKeys = (Object.values(payload) as Array<Array<Record<string, unknown>>>).flatMap((rows) => rows.flatMap((row) => Object.entries(row).filter(([key]) => key === 'id' || key.endsWith('_id')).map(([, value]) => value)));
     expect(foreignKeys.every((value) => value === null || typeof value === 'string' && uuidPattern.test(value))).toBe(true);

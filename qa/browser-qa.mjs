@@ -50,7 +50,11 @@ try {
   await page.getByLabel('Email').fill(emailA);
   await page.getByLabel('Contraseña').fill(password);
   await page.getByRole('button', { name: 'Registrarme' }).click();
-  await page.locator('.summary-grid').waitFor({ timeout: 15000 });
+  try {
+    await page.locator('.summary-grid').waitFor({ timeout: 15000 });
+  } catch (error) {
+    throw new Error(`El registro no abrió el dashboard. URL: ${page.url()}. Pantalla: ${await page.locator('body').innerText()}`, { cause: error });
+  }
   check('registro, sesión y carga autenticada');
 
   await page.goto(`${baseUrl}/#/datos`, { waitUntil: 'domcontentloaded' });
@@ -70,9 +74,13 @@ try {
   assert(new Set(legend.map((item) => item.y)).size <= 5, 'La leyenda de categorías supera cinco filas');
   if (legend.length > 5) assert(new Set(legend.map((item) => item.x)).size > 1, 'La leyenda no usa múltiples columnas');
   assert(await page.locator('.category-card .recharts-wrapper').evaluate((item) => getComputedStyle(item).outlineStyle) === 'none', 'El gráfico conserva borde de foco negro');
+  const upcomingCard = page.locator('.upcoming-card');
+  assert(await upcomingCard.getByText('Alquiler', { exact: true }).count() === 0, 'Próximos pagos todavía muestra un vencimiento pasado');
+  assert(await upcomingCard.getByText('Netflix', { exact: true }).count() === 1, 'Próximos pagos no muestra un vencimiento futuro');
+  assert(await page.getByText('Movimientos del mes', { exact: true }).count() === 1, 'El dashboard no muestra los movimientos del mes');
   await page.getByRole('link', { name: 'Gestionar' }).click();
   assert(page.url().includes('#/planificacion?tab=limits'), 'Gestionar límites no abre Planificación');
-  check('dashboard, leyenda y navegación de límites');
+  check('dashboard, próximos pagos, movimientos y navegación de límites');
 
   await page.getByRole('link', { name: 'Análisis' }).click();
   await page.getByText('Flujo del mes', { exact: true }).waitFor();
@@ -83,18 +91,40 @@ try {
   check('análisis sin gráfico removido ni bordes');
 
   await page.getByRole('link', { name: 'Inicio' }).click();
-  await page.getByRole('button', { name: 'Nuevo movimiento' }).click();
+  await page.getByRole('button', { name: 'Comprar/vender USD' }).click();
   let dialog = page.getByRole('dialog');
+  await dialog.getByLabel('Nombre').fill('Compra USD QA');
+  await dialog.getByLabel('Cantidad de dólares').fill('100');
+  await dialog.getByLabel('Tipo de cambio (ARS por USD)').fill('1500');
+  await dialog.getByLabel('Fecha').fill('2026-08-18');
+  await dialog.getByRole('button', { name: 'Guardar movimiento' }).click();
+  await page.getByRole('button', { name: 'Comprar/vender CEDEAR' }).click();
+  dialog = page.getByRole('dialog');
+  const cedearValues = await dialog.getByLabel('CEDEAR').locator('option').evaluateAll((options) => options.map((option) => option.value));
+  assert(['AAPL', 'GOOGL', 'NVDA', 'MSFT'].every((ticker) => cedearValues.includes(ticker)), 'Faltan los nuevos CEDEARs en el formulario');
+  await dialog.getByRole('button', { name: 'Cancelar' }).click();
+  check('compra USD con cotización y nuevos CEDEARs');
+
+  await page.getByRole('button', { name: 'Nuevo movimiento' }).click();
+  dialog = page.getByRole('dialog');
   await dialog.getByLabel('Nombre').fill('Prueba QA Supabase');
   await dialog.getByLabel('Importe').fill('12345');
   await dialog.getByLabel('Fecha').fill('2026-08-15');
   await dialog.getByRole('button', { name: 'Guardar movimiento' }).click();
-  await page.getByRole('link', { name: 'Movimientos' }).click();
+  await page.getByRole('link', { name: 'Movimientos', exact: true }).click();
   await page.getByText('Prueba QA Supabase', { exact: true }).waitFor();
   await page.waitForTimeout(700);
   await page.reload({ waitUntil: 'domcontentloaded' });
   await page.getByText('Prueba QA Supabase', { exact: true }).waitFor();
   check('CRUD persistido después de recargar');
+
+  const notebookRow = page.locator('.transaction-row').filter({ hasText: 'Notebook' });
+  assert(await notebookRow.count() === 1, 'No se encontró la cuota de Notebook para probar su eliminación');
+  await notebookRow.getByRole('button', { name: 'Eliminar Notebook' }).click();
+  dialog = page.getByRole('dialog');
+  assert((await dialog.innerText()).includes('plan de cuotas completo'), 'La confirmación no informa el borrado completo de cuotas');
+  await dialog.getByRole('button', { name: 'Eliminar' }).click();
+  await page.waitForTimeout(700);
 
   await page.getByRole('link', { name: 'Planificación' }).click();
   await page.getByRole('button', { name: 'Objetivos' }).click();
@@ -105,6 +135,12 @@ try {
   await page.waitForTimeout(700);
   const { data: authA, error: signInAError } = await apiA.auth.signInWithPassword({ email: emailA, password });
   assert(!signInAError && authA.user, `No se pudo reautenticar el usuario A: ${signInAError?.message}`);
+  const { data: dollarPurchase, error: dollarPurchaseError } = await apiA.from('transactions').select('amount, exchange_rate, asset_action').eq('name', 'Compra USD QA').single();
+  assert(!dollarPurchaseError && dollarPurchase.amount === 100 && dollarPurchase.exchange_rate === 1500 && dollarPurchase.asset_action === 'buy', 'La compra USD no guardó cantidad, cotización y operación');
+  const { data: notebookPlans, error: notebookPlansError } = await apiA.from('installment_plans').select('id').eq('description', 'Notebook');
+  const { data: notebookInstallments, error: notebookInstallmentsError } = await apiA.from('transactions').select('id').eq('name', 'Notebook');
+  assert(!notebookPlansError && !notebookInstallmentsError && notebookPlans?.length === 0 && notebookInstallments?.length === 0, 'Eliminar una cuota no eliminó el plan y sus cuotas futuras');
+  check('borrado completo y persistido del plan de cuotas');
   const { data: contributions, error: contributionsError } = await apiA.from('goal_contributions').select('transaction_id, amount').eq('amount', 10000);
   assert(!contributionsError && contributions?.length === 1 && contributions[0].transaction_id, 'El aporte no quedó persistido y vinculado');
   const { data: savingMovement, error: movementError } = await apiA.from('transactions').select('id, goal_id, type').eq('id', contributions[0].transaction_id).single();

@@ -30,7 +30,7 @@ export interface SavingsGoalRow extends BaseRow {
 export interface TransactionRow extends BaseRow {
   name: string; amount: number; currency: string; transaction_date: string; type: string; expense_type: string | null; category_id: string | null; notes: string | null;
   fixed_expense_id: string | null; recurring_income_id: string | null; installment_plan_id: string | null; installment_number: number | null; installment_count: number | null;
-  investment_ticker: string | null; investment_quantity: number | null; goal_id: string | null;
+  investment_ticker: string | null; investment_quantity: number | null; asset_action: string | null; exchange_rate: number | null; goal_id: string | null;
 }
 export interface MonthlyLimitRow extends BaseRow { month: string; category_id: string; percentage: number | null; amount: number | null; currency: string }
 export interface CalendarEventRow extends BaseRow { title: string; event_date: string; description: string | null; type: string }

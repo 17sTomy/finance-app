@@ -1,5 +1,5 @@
 {
-  "passed": 9,
+  "passed": 11,
   "checks": [
     {
       "name": "ruta privada protegida",
@@ -10,7 +10,7 @@
       "ok": true
     },
     {
-      "name": "dashboard, leyenda y navegación de límites",
+      "name": "dashboard, próximos pagos, movimientos y navegación de límites",
       "ok": true
     },
     {
@@ -18,7 +18,15 @@
       "ok": true
     },
     {
+      "name": "compra USD con cotización y nuevos CEDEARs",
+      "ok": true
+    },
+    {
       "name": "CRUD persistido después de recargar",
+      "ok": true
+    },
+    {
+      "name": "borrado completo y persistido del plan de cuotas",
       "ok": true
     },
     {

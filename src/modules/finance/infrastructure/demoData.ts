@@ -47,7 +47,7 @@ const variableByMonth: Record<string, Transaction[]> = {
     tx('aug-resto', 'Restaurante', 48500, '2026-08-14', 'expense', 'outings'),
     tx('aug-tech', 'Accesorios', 32000, '2026-08-16', 'expense', 'technology'),
     tx('aug-bonus', 'Bonus proyecto', 180000, '2026-08-12', 'income', 'extra'),
-    { ...tx('aug-saving-usd', 'Ahorro en dólares', 1250, '2026-08-20', 'saving', 'savings'), currency: 'USD' },
+    { ...tx('aug-saving-usd', 'Compra de dólares', 1250, '2026-08-20', 'saving', 'savings'), currency: 'USD', assetAction: 'buy', exchangeRate: 1050 },
     { ...tx('aug-spy', 'Compra SPY', 150000, '2026-08-21', 'investment', 'investments'), investmentTicker: 'SPY', investmentQuantity: 3 },
     { ...tx('aug-ewz', 'Compra EWZ', 80000, '2026-08-22', 'investment', 'investments'), investmentTicker: 'EWZ', investmentQuantity: 8 },
   ],
