@@ -17,8 +17,10 @@ interface FinanceContextValue {
   monthData: FinanceDatabase['months'][string];
   showAmounts: boolean;
   isLoading: boolean;
-  persistenceError: string | null;
-  retryPersistence: () => void;
+  loadError: string | null;
+  saveError: string | null;
+  retryLoad: () => void;
+  retrySave: () => void;
   changeMonth: (offset: number) => void;
   setSelectedMonth: (value: string) => void;
   toggleAmounts: () => void;
@@ -76,39 +78,47 @@ export function FinanceProvider({ children }: { children: ReactNode }) {
   const [showAmounts, setShowAmounts] = useState(true);
   const [isLoading, setIsLoading] = useState(true);
   const [hydrated, setHydrated] = useState(false);
-  const [persistenceError, setPersistenceError] = useState<string | null>(null);
+  const [loadError, setLoadError] = useState<string | null>(null);
+  const [saveError, setSaveError] = useState<string | null>(null);
   const saveQueue = useRef<Promise<void>>(Promise.resolve());
+  const loadRequest = useRef(0);
 
   const persistSnapshot = useCallback((snapshot: FinanceDatabase) => {
     saveQueue.current = saveQueue.current.catch(() => undefined).then(async () => {
       await repository.save(snapshot);
-      setPersistenceError(null);
+      setSaveError(null);
     }).catch((error: unknown) => {
       console.error('Falló la sincronización con Supabase.', error);
-      setPersistenceError('No pudimos sincronizar los últimos cambios con Supabase. Revisá tu conexión y reintentá.');
+      setSaveError('No pudimos sincronizar los últimos cambios con Supabase. Revisá tu conexión y reintentá.');
     });
   }, []);
 
-  useEffect(() => {
+  const loadFinance = useCallback(async () => {
     if (!user) return;
-    let active = true;
-    Promise.all([repository.load(user.id), repository.loadPreferences(user.id)])
-      .then(([stored, preferences]) => {
-        if (!active) return;
-        const month = preferences?.selectedMonth ?? currentMonth();
-        setSelectedMonthState(month);
-        setShowAmounts(preferences?.showAmounts ?? true);
-        setDatabase(ensureDatabaseMonth(stored, month));
-        setHydrated(true);
-      })
-      .catch((error: unknown) => {
-        if (!active) return;
-        console.error('No se pudieron cargar los datos de Supabase.', error);
-        setPersistenceError('No pudimos cargar tus finanzas desde Supabase. Verificá la configuración y tu conexión.');
-      })
-      .finally(() => { if (active) setIsLoading(false); });
-    return () => { active = false; };
+    const request = ++loadRequest.current;
+    setIsLoading(true);
+    setLoadError(null);
+    try {
+      const [stored, preferences] = await Promise.all([repository.load(user.id), repository.loadPreferences(user.id)]);
+      if (loadRequest.current !== request) return;
+      const month = preferences?.selectedMonth ?? currentMonth();
+      setSelectedMonthState(month);
+      setShowAmounts(preferences?.showAmounts ?? true);
+      setDatabase(ensureDatabaseMonth(stored, month));
+      setHydrated(true);
+    } catch (error: unknown) {
+      if (loadRequest.current !== request) return;
+      console.error('No se pudieron cargar los datos de Supabase.', error);
+      setLoadError('No pudimos cargar tus finanzas desde Supabase. Verificá la configuración y tu conexión.');
+    } finally {
+      if (loadRequest.current === request) setIsLoading(false);
+    }
   }, [user]);
+
+  useEffect(() => {
+    void loadFinance();
+    return () => { loadRequest.current += 1; };
+  }, [loadFinance]);
 
   useEffect(() => {
     if (!hydrated) return;
@@ -120,7 +130,7 @@ export function FinanceProvider({ children }: { children: ReactNode }) {
     if (!hydrated) return;
     const timer = window.setTimeout(() => repository.savePreferences({ selectedMonth, showAmounts }).catch((error: unknown) => {
       console.error('No se pudieron guardar las preferencias.', error);
-      setPersistenceError('No pudimos sincronizar tus preferencias con Supabase.');
+      setSaveError('No pudimos sincronizar tus preferencias con Supabase.');
     }), 180);
     return () => window.clearTimeout(timer);
   }, [selectedMonth, showAmounts, hydrated]);
@@ -158,8 +168,10 @@ export function FinanceProvider({ children }: { children: ReactNode }) {
     monthData: database.months[selectedMonth] ?? createMonth(...selectedMonth.split('-').map(Number) as [number, number], database, false, todayISO()),
     showAmounts,
     isLoading,
-    persistenceError,
-    retryPersistence: () => persistSnapshot(database),
+    loadError,
+    saveError,
+    retryLoad: () => { void loadFinance(); },
+    retrySave: () => persistSnapshot(database),
     changeMonth,
     setSelectedMonth,
     toggleAmounts: () => setShowAmounts((current) => !current),
@@ -244,7 +256,7 @@ export function FinanceProvider({ children }: { children: ReactNode }) {
     },
     resetDemo: () => { setDatabase(normalizeFinanceDatabaseIds(createDemoDatabase())); setSelectedMonthState('2026-08'); },
   // eslint-disable-next-line react-hooks/exhaustive-deps
-  }), [database, selectedMonth, showAmounts, isLoading, persistenceError, changeMonth, setSelectedMonth, persistSnapshot]);
+  }), [database, selectedMonth, showAmounts, isLoading, loadError, saveError, changeMonth, setSelectedMonth, loadFinance, persistSnapshot]);
 
   return <FinanceContext.Provider value={value}>{children}</FinanceContext.Provider>;
 }

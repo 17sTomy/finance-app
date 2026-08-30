@@ -17,7 +17,7 @@ const navigation = [
 ];
 
 export function AppLayout() {
-  const { showAmounts, toggleAmounts, isLoading, persistenceError, retryPersistence } = useFinance();
+  const { showAmounts, toggleAmounts, isLoading, loadError, saveError, retryLoad, retrySave } = useFinance();
   const { user, signOut } = useAuth();
   const [menuOpen, setMenuOpen] = useState(false);
   const [remindersOpen, setRemindersOpen] = useState(false);
@@ -39,7 +39,11 @@ export function AppLayout() {
         </div>
         <ReminderCenter open={remindersOpen} onClose={() => setRemindersOpen(false)} />
       </header>
-      <div className="page">{persistenceError && <div className="data-error" role="alert"><span>{persistenceError}</span><button className="text-button" onClick={retryPersistence}>Reintentar</button></div>}{isLoading ? <div className="route-loading">Cargando tus finanzas…</div> : <Outlet />}</div>
+      <div className="page">
+        {loadError && <div className="data-error" role="alert"><span>{loadError}</span><button className="text-button" onClick={retryLoad}>Reintentar carga</button></div>}
+        {saveError && <div className="data-error" role="alert"><span>{saveError}</span><button className="text-button" onClick={retrySave}>Reintentar guardado</button></div>}
+        {isLoading ? <div className="route-loading">Cargando tus finanzas…</div> : <Outlet />}
+      </div>
     </main>
     <nav className="bottom-nav">{navigation.slice(0, 5).map(({ to, label, icon: Icon }) => <NavLink key={to} to={to} end={to === '/'}><Icon size={20} /><span>{label === 'Planificación' ? 'Plan' : label}</span></NavLink>)}</nav>
   </div>;
