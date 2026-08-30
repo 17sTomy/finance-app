@@ -65,7 +65,7 @@ export function deleteTransactionCascade(database: FinanceDatabase, transactionI
     installmentPlans: planId ? database.installmentPlans.filter((plan) => plan.id !== planId) : database.installmentPlans,
     goals: database.goals.map((goal) => ({
       ...goal,
-      contributions: goal.contributions.map((contribution) => contribution.transactionId === transactionId ? { ...contribution, transactionId: undefined } : contribution),
+      contributions: goal.contributions.filter((contribution) => contribution.transactionId !== transactionId),
     })),
     months: Object.fromEntries(Object.entries(database.months).map(([key, month]) => [key, {
       ...month,

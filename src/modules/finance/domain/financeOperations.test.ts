@@ -39,6 +39,19 @@ describe('operaciones financieras sincronizadas', () => {
     expect(Object.values(result.months).flatMap((month) => month.transactions).some((item) => item.installmentPlanId === 'notebook-plan')).toBe(false);
   });
 
+  it('elimina el aporte asociado cuando se borra su movimiento', () => {
+    const database = createDemoDatabase();
+    const balanceBefore = calculateSummary(database.months['2026-08'].transactions).balance;
+    const contributed = addGoalContribution(database, '2026-08', 'trip', 10000, 'contribution-delete', '2026-08-18');
+
+    const result = deleteTransactionCascade(contributed, 'goal-contribution-contribution-delete');
+    const goal = result.goals.find((item) => item.id === 'trip')!;
+
+    expect(goal.contributions.some((item) => item.id === 'contribution-delete')).toBe(false);
+    expect(goalTotal(goal.contributions)).toBe(600000);
+    expect(calculateSummary(result.months['2026-08'].transactions).balance).toBe(balanceBefore);
+  });
+
   it('guarda inmediatamente un movimiento nuevo en el mes de su fecha', () => {
     const database = createDemoDatabase();
     const transaction = { id: 'september-expense', name: 'Expensa', amount: 50000, currency: 'ARS' as const, date: '2026-09-03', type: 'expense' as const };
