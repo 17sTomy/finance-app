@@ -12,5 +12,6 @@ vite.config.js
 vite.config.d.ts
 dev-server*.log
 qa/month-export.json
+*:Zone.Identifier
 supabase/.branches/
 supabase/.temp/

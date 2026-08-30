@@ -86,6 +86,8 @@ npm run test:e2e
 
 La URL y la clave pública local aparecen al ejecutar `npx supabase status`.
 
+El workflow de CI levanta esa misma stack local con Docker, aplica las migraciones desde cero, instala Chromium y ejecuta el E2E antes de habilitar el deploy. El runner rechaza cualquier `QA_SUPABASE_URL` cuyo host no sea `127.0.0.1`, `localhost` o `::1`, por lo que este flujo no puede apuntar a producción. Para reproducirlo localmente hacen falta Docker, la CLI incluida en las dependencias del proyecto y Chromium administrado por Playwright (`npx playwright-core install chromium`).
+
 ## Migrar un respaldo JSON anterior
 
 La pantalla **Datos** sigue aceptando las exportaciones JSON de la versión local. También se incluye un importador idempotente por usuario:

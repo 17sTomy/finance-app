@@ -1,12 +1,15 @@
 import { chromium } from 'playwright-core';
 import { createClient } from '@supabase/supabase-js';
 import { mkdir, writeFile } from 'node:fs/promises';
+import { fileURLToPath } from 'node:url';
 import { spawn } from 'node:child_process';
 
 const baseUrl = 'http://127.0.0.1:4174';
 const supabaseUrl = process.env.QA_SUPABASE_URL;
 const supabaseKey = process.env.QA_SUPABASE_ANON_KEY;
 if (!supabaseUrl || !supabaseKey) throw new Error('Definí QA_SUPABASE_URL y QA_SUPABASE_ANON_KEY para ejecutar el QA autenticado.');
+const supabaseHost = new URL(supabaseUrl).hostname;
+if (!['127.0.0.1', 'localhost', '::1'].includes(supabaseHost)) throw new Error('El E2E solo puede ejecutarse contra una instancia local de Supabase.');
 
 const outputDir = new URL('./', import.meta.url);
 await mkdir(outputDir, { recursive: true });
@@ -30,7 +33,7 @@ const password = 'Finance-QA-2026!';
 const apiA = createClient(supabaseUrl, supabaseKey, { auth: { persistSession: false, autoRefreshToken: false } });
 const apiB = createClient(supabaseUrl, supabaseKey, { auth: { persistSession: false, autoRefreshToken: false } });
 
-const browser = await chromium.launch({ headless: true, executablePath: 'C:/Program Files (x86)/Microsoft/Edge/Application/msedge.exe' });
+const browser = await chromium.launch({ headless: true, ...(process.env.QA_BROWSER_PATH ? { executablePath: process.env.QA_BROWSER_PATH } : {}) });
 const context = await browser.newContext({ viewport: { width: 1440, height: 1100 }, locale: 'es-AR' });
 const page = await context.newPage();
 const errors = [];
@@ -67,7 +70,7 @@ try {
   await page.goto(`${baseUrl}/#/`, { waitUntil: 'domcontentloaded' });
   await page.locator('.summary-grid').waitFor();
   await page.waitForTimeout(500);
-  await page.screenshot({ path: new URL('dashboard-desktop.png', outputDir).pathname.slice(1), fullPage: true });
+  await page.screenshot({ path: fileURLToPath(new URL('dashboard-desktop.png', outputDir)), fullPage: true });
   const legend = await page.locator('.chart-legend > div').evaluateAll((items) => items.map((item) => {
     const rect = item.getBoundingClientRect(); return { x: Math.round(rect.x), y: Math.round(rect.y) };
   }));
@@ -76,7 +79,8 @@ try {
   assert(await page.locator('.category-card .recharts-wrapper').evaluate((item) => getComputedStyle(item).outlineStyle) === 'none', 'El gráfico conserva borde de foco negro');
   const upcomingCard = page.locator('.upcoming-card');
   assert(await upcomingCard.getByText('Alquiler', { exact: true }).count() === 0, 'Próximos pagos todavía muestra un vencimiento pasado');
-  assert(await upcomingCard.getByText('Netflix', { exact: true }).count() === 1, 'Próximos pagos no muestra un vencimiento futuro');
+  const netflixIsUpcoming = new Date().toISOString().slice(0, 10) <= '2026-08-22';
+  assert(await upcomingCard.getByText('Netflix', { exact: true }).count() === (netflixIsUpcoming ? 1 : 0), 'Próximos pagos no respeta la fecha actual');
   assert(await page.getByText('Movimientos del mes', { exact: true }).count() === 1, 'El dashboard no muestra los movimientos del mes');
   await page.getByRole('link', { name: 'Gestionar' }).click();
   assert(page.url().includes('#/planificacion?tab=limits'), 'Gestionar límites no abre Planificación');
@@ -87,7 +91,7 @@ try {
   assert(await page.getByText('Evolución del balance', { exact: true }).count() === 0, 'Todavía se muestra Evolución del balance');
   const chartOutlines = await page.locator('.recharts-wrapper').evaluateAll((items) => items.map((item) => getComputedStyle(item).outlineStyle));
   assert(chartOutlines.every((value) => value === 'none'), 'Algún gráfico conserva borde negro');
-  await page.screenshot({ path: new URL('analysis-desktop.png', outputDir).pathname.slice(1), fullPage: true });
+  await page.screenshot({ path: fileURLToPath(new URL('analysis-desktop.png', outputDir)), fullPage: true });
   check('análisis sin gráfico removido ni bordes');
 
   await page.getByRole('link', { name: 'Inicio' }).click();
