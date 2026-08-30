@@ -1,6 +1,6 @@
 import { format } from 'date-fns';
-import { firstBusinessDay, generateInstallments, isFixedExpenseActive, projectFixedExpense } from './projections';
-import type { FixedExpense, InstallmentPlan } from './models';
+import { firstBusinessDay, generateInstallments, isFixedExpenseActive, projectFixedExpense, projectSalary } from './projections';
+import type { FixedExpense, InstallmentPlan, RecurringIncome } from './models';
 
 describe('proyecciones', () => {
   it('encuentra el primer día hábil sin acoplar feriados', () => {
@@ -28,5 +28,19 @@ describe('proyecciones', () => {
     const expense: FixedExpense = { id: 'fixed', name: 'Internet', amount: 333333, currency: 'ARS', categoryId: 'other', startDate: '2026-08-01', dueDay: 18, duration: { type: 'unlimited' }, reminderEnabled: true, active: true };
     expect(projectFixedExpense(expense, 2026, 8, '2026-08-17')).toBeNull();
     expect(projectFixedExpense(expense, 2026, 8, '2026-08-18')).toMatchObject({ amount: 333333, date: '2026-08-18' });
+  });
+
+  it('no proyecta gastos fijos antes del inicio ni después de la fecha final', () => {
+    const expense: FixedExpense = { id: 'fixed', name: 'Seguro', amount: 10, currency: 'ARS', categoryId: 'other', startDate: '2026-08-20', dueDay: 5, duration: { type: 'until', endDate: '2026-09-03' }, reminderEnabled: true, active: true };
+
+    expect(projectFixedExpense(expense, 2026, 8)).toBeNull();
+    expect(projectFixedExpense(expense, 2026, 9)).toBeNull();
+  });
+
+  it('no proyecta un sueldo antes de su fecha de inicio', () => {
+    const income: RecurringIncome = { id: 'salary', name: 'Sueldo', amount: 1000, currency: 'ARS', startDate: '2026-08-10', active: true };
+
+    expect(projectSalary(income, 2026, 8)).toBeNull();
+    expect(projectSalary(income, 2026, 9)?.date).toBe('2026-09-01');
   });
 });

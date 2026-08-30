@@ -6,6 +6,7 @@ import { newId } from '../../finance/domain/models';
 import { Card } from '../../../shared/components/Card';
 import { MoneyValue } from '../../../shared/components/MoneyValue';
 import { ConfirmDialog, Modal } from '../../../shared/components/Modal';
+import { dateForSelectedMonth, isValidISODate } from '../../../shared/utils/dates';
 
 function durationText(duration: RecurrenceDuration) {
   if (duration.type === 'unlimited') return 'Sin fecha de fin';
@@ -32,9 +33,11 @@ function FixedExpenseForm({ initial, onDone }: { initial?: FixedExpense; onDone:
     const numericAmount = Number(amount); const day = Number(dueDay); const months = Number(durationValue);
     if (!name.trim()) return setError('Ingresá un nombre.');
     if (!Number.isFinite(numericAmount) || numericAmount <= 0) return setError('Ingresá un importe válido.');
+    if (!isValidISODate(startDate)) return setError('Elegí una fecha de inicio válida.');
     if (!Number.isInteger(day) || day < 1 || day > 31) return setError('El día de vencimiento debe estar entre 1 y 31.');
     if (durationType === 'months' && (!Number.isInteger(months) || months < 1)) return setError('La duración debe ser de al menos un mes.');
-    if (durationType === 'until' && !/^\d{4}-\d{2}-\d{2}$/.test(durationValue)) return setError('Elegí una fecha de finalización válida.');
+    if (durationType === 'until' && !isValidISODate(durationValue)) return setError('Elegí una fecha de finalización válida.');
+    if (durationType === 'until' && durationValue < startDate) return setError('La fecha final no puede ser anterior a la fecha de inicio.');
     const duration: RecurrenceDuration = durationType === 'months' ? { type: 'months', count: months } : durationType === 'until' ? { type: 'until', endDate: durationValue } : { type: 'unlimited' };
     saveFixedExpense({ id: initial?.id ?? newId(), name: name.trim(), amount: numericAmount, currency, categoryId, startDate, dueDay: day, duration, reminderEnabled: reminder, notes: notes.trim() || undefined, active: initial?.active ?? true });
     onDone();
@@ -57,8 +60,8 @@ function FixedExpenseForm({ initial, onDone }: { initial?: FixedExpense; onDone:
 }
 
 function SalaryForm({ initial, onDone }: { initial?: RecurringIncome; onDone: () => void }) {
-  const { saveRecurringIncome } = useFinance(); const [name, setName] = useState(initial?.name ?? 'Sueldo'); const [amount, setAmount] = useState(initial?.amount ? String(initial.amount) : ''); const [currency, setCurrency] = useState<Currency>(initial?.currency ?? 'ARS'); const [startDate, setStartDate] = useState(initial?.startDate ?? '2026-08-01'); const [error, setError] = useState('');
-  const submit = (event: FormEvent) => { event.preventDefault(); const value = Number(amount); if (!name.trim()) return setError('Ingresá un nombre.'); if (!Number.isFinite(value) || value <= 0) return setError('Ingresá un importe válido.'); saveRecurringIncome({ id: initial?.id ?? newId(), name: name.trim(), amount: value, currency, startDate, active: initial?.active ?? true }); onDone(); };
+  const { saveRecurringIncome, selectedMonth } = useFinance(); const [name, setName] = useState(initial?.name ?? 'Sueldo'); const [amount, setAmount] = useState(initial?.amount ? String(initial.amount) : ''); const [currency, setCurrency] = useState<Currency>(initial?.currency ?? 'ARS'); const [startDate, setStartDate] = useState(initial?.startDate ?? dateForSelectedMonth(selectedMonth)); const [error, setError] = useState('');
+  const submit = (event: FormEvent) => { event.preventDefault(); const value = Number(amount); if (!name.trim()) return setError('Ingresá un nombre.'); if (!Number.isFinite(value) || value <= 0) return setError('Ingresá un importe válido.'); if (!isValidISODate(startDate)) return setError('Elegí una fecha de inicio válida.'); saveRecurringIncome({ id: initial?.id ?? newId(), name: name.trim(), amount: value, currency, startDate, active: initial?.active ?? true }); onDone(); };
   return <form className="form-grid" onSubmit={submit}><label className="field--wide">Nombre<input autoFocus value={name} onChange={(event) => setName(event.target.value)} /></label><label>Importe<input type="number" inputMode="decimal" min="0.01" step="0.01" value={amount} onChange={(event) => setAmount(event.target.value)} /></label><label>Moneda<select value={currency} onChange={(event) => setCurrency(event.target.value as Currency)}><option value="ARS">ARS</option><option value="USD">USD</option></select></label><label className="field--wide">Fecha de inicio<input type="date" value={startDate} onChange={(event) => setStartDate(event.target.value)} /></label><p className="form-note field--wide">Se ingresará automáticamente el primer día hábil argentino de cada mes, contemplando fines de semana y feriados nacionales.</p>{error && <p className="form-error field--wide">{error}</p>}<div className="form-actions field--wide"><button type="button" className="button button--ghost" onClick={onDone}>Cancelar</button><button className="button button--primary">Guardar ingreso recurrente</button></div></form>;
 }
 
