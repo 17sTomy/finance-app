@@ -5,7 +5,7 @@ import { normalizeFinanceDatabaseIds } from '../../infrastructure/persistence/fi
 import type { CalendarEvent, Category, FinanceDatabase, FixedExpense, InstallmentPlan, MonthlyLimit, RecurringIncome, SavingsGoal, Transaction } from '../../modules/finance/domain/models';
 import { newId } from '../../modules/finance/domain/models';
 import { generateInstallments, projectFixedExpense, projectSalary, synchronizeSalaryDates } from '../../modules/finance/domain/projections';
-import { addGoalContribution, deleteTransactionCascade } from '../../modules/finance/domain/financeOperations';
+import { addGoalContribution, deleteTransactionCascade, storeTransactionByDate } from '../../modules/finance/domain/financeOperations';
 import { createDemoDatabase, createMonth } from '../../modules/finance/infrastructure/demoData';
 import { getCachedHolidayDates, loadArgentinaHolidayDates } from '../../modules/finance/infrastructure/argentinaHolidays';
 import { useAuth } from './AuthProvider';
@@ -175,8 +175,19 @@ export function FinanceProvider({ children }: { children: ReactNode }) {
     changeMonth,
     setSelectedMonth,
     toggleAmounts: () => setShowAmounts((current) => !current),
-    addTransaction: (transaction) => updateCurrentMonth((month) => ({ ...month, transactions: [...month.transactions, { ...transaction, id: newId() }] })),
-    updateTransaction: (transaction) => updateCurrentMonth((month) => ({ ...month, transactions: month.transactions.map((item) => item.id === transaction.id ? transaction : item) })),
+    addTransaction: (value) => {
+      const transaction = { ...value, id: newId() };
+      setDatabase((current) => {
+        const targetKey = transaction.date.slice(0, 7);
+        const complete = ensureDatabaseMonth(current, targetKey);
+        return storeTransactionByDate(complete, transaction, complete.months[targetKey]);
+      });
+    },
+    updateTransaction: (transaction) => setDatabase((current) => {
+      const targetKey = transaction.date.slice(0, 7);
+      const complete = ensureDatabaseMonth(current, targetKey);
+      return storeTransactionByDate(complete, transaction, complete.months[targetKey]);
+    }),
     deleteTransaction: (id) => setDatabase((current) => deleteTransactionCascade(current, id)),
     saveFixedExpense: (expense) => setDatabase((current) => {
       const exists = current.fixedExpenses.some((item) => item.id === expense.id);

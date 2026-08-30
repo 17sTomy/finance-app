@@ -1,4 +1,24 @@
-import type { FinanceDatabase, Transaction } from './models';
+import type { FinanceDatabase, MonthlyFinanceData, Transaction } from './models';
+
+export function storeTransactionByDate(
+  database: FinanceDatabase,
+  transaction: Transaction,
+  targetMonth: MonthlyFinanceData,
+): FinanceDatabase {
+  const targetKey = transaction.date.slice(0, 7);
+  const months = Object.fromEntries(Object.entries(database.months).map(([key, month]) => [key, {
+    ...month,
+    transactions: month.transactions.filter((item) => item.id !== transaction.id),
+  }]));
+  const target = months[targetKey] ?? targetMonth;
+  return {
+    ...database,
+    months: {
+      ...months,
+      [targetKey]: { ...target, transactions: [...target.transactions, transaction] },
+    },
+  };
+}
 
 export function addGoalContribution(
   database: FinanceDatabase,
