@@ -32,7 +32,7 @@ export class SupabaseFinanceRepository implements FinanceRepository {
     const normalized = normalizeFinanceDatabaseIds(database);
     const payload = financeDatabaseToPayload(normalized) as unknown as Json;
     const { data, error } = await getSupabase().rpc('replace_finance_data', { p_data: payload, p_expected_revision: expectedRevision });
-    if (error?.code === '40001' || error?.message.includes('FINANCE_VERSION_CONFLICT')) throw new FinanceConflictError();
+    if (error?.code === 'PT409' || error?.message.includes('FINANCE_VERSION_CONFLICT')) throw new FinanceConflictError();
     assertResult(error);
     const revision = Number(data);
     if (!Number.isSafeInteger(revision) || revision < 0) throw new Error('Supabase devolvió una revisión financiera inválida.');

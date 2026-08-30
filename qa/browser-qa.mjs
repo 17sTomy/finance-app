@@ -176,6 +176,19 @@ try {
   assert(await page.getByText('$••••', { exact: true }).count() >= 1, 'La preferencia de privacidad no persistió');
   check('preferencias sincronizadas');
 
+  await page.close();
+  const { data: financeSnapshot, error: snapshotError } = await apiA.rpc('get_finance_data');
+  assert(!snapshotError && Number.isSafeInteger(financeSnapshot?.revision), 'No se pudo leer la revisión financiera para probar concurrencia');
+  const expectedRevision = financeSnapshot.revision;
+  const emptyPayload = { categories: [], fixed_expenses: [], recurring_incomes: [], installment_plans: [], savings_goals: [], transactions: [], monthly_limits: [], calendar_events: [], goal_contributions: [] };
+  const firstWrite = await apiA.rpc('replace_finance_data', { p_data: emptyPayload, p_expected_revision: expectedRevision });
+  assert(!firstWrite.error, `La escritura con revisión vigente falló: ${firstWrite.error?.code ?? 'error desconocido'}`);
+  const { data: advancedSnapshot, error: advancedSnapshotError } = await apiA.rpc('get_finance_data');
+  assert(!advancedSnapshotError && advancedSnapshot?.revision === expectedRevision + 1, 'La primera escritura no avanzó la revisión exactamente una vez');
+  const staleWrite = await apiA.rpc('replace_finance_data', { p_data: emptyPayload, p_expected_revision: expectedRevision });
+  assert(staleWrite.error?.code === 'PT409', `Una escritura obsoleta no fue rechazada por la revisión optimista: ${staleWrite.error?.code ?? 'sin error'}`);
+  check('concurrencia optimista rechaza snapshots obsoletos');
+
   assert(errors.length === 0, `Errores de navegador: ${errors.join(' | ')}`);
   check('consola del navegador limpia');
   await writeFile(new URL('report.json', outputDir), JSON.stringify({ passed: checks.length, checks, errors }, null, 2));

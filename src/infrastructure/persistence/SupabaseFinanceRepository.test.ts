@@ -51,7 +51,7 @@ describe('SupabaseFinanceRepository optimistic concurrency', () => {
   });
 
   it('reports a stale snapshot as an explicit concurrency conflict', async () => {
-    client.rpc.mockResolvedValueOnce({ data: null, error: { code: '40001', message: 'FINANCE_VERSION_CONFLICT' } });
+    client.rpc.mockResolvedValueOnce({ data: null, error: { code: 'PT409', message: 'FINANCE_VERSION_CONFLICT' } });
 
     const save = new SupabaseFinanceRepository().save(emptyDatabase, 3);
 

@@ -32,7 +32,7 @@ set search_path = public
 as $$
 declare
   current_user_id uuid := auth.uid();
-  current_revision bigint;
+  next_revision bigint;
 begin
   if current_user_id is null then raise exception 'Authentication required'; end if;
 
@@ -40,15 +40,15 @@ begin
   values (current_user_id)
   on conflict (user_id) do nothing;
 
-  select finance_revision
-  into current_revision
-  from public.user_preferences
-  where user_id = current_user_id
-  for update;
+  update public.user_preferences as preferences
+  set finance_revision = preferences.finance_revision + 1
+  where preferences.user_id = current_user_id
+    and preferences.finance_revision = p_expected_revision
+  returning preferences.finance_revision into next_revision;
 
-  if current_revision is distinct from p_expected_revision then
+  if next_revision is null then
     raise exception 'FINANCE_VERSION_CONFLICT'
-      using errcode = '40001', detail = format('Expected revision %s, current revision is %s', p_expected_revision, current_revision);
+      using errcode = 'PT409', detail = format('Expected revision %s', p_expected_revision);
   end if;
 
   delete from public.goal_contributions where user_id = current_user_id;
@@ -97,11 +97,7 @@ begin
   select id, goal_id, transaction_id, amount, contribution_date
   from jsonb_to_recordset(coalesce(p_data->'goal_contributions', '[]'::jsonb)) as x(id uuid, goal_id uuid, transaction_id uuid, amount numeric, contribution_date date);
 
-  update public.user_preferences
-  set finance_revision = current_revision + 1
-  where user_id = current_user_id;
-
-  return current_revision + 1;
+  return next_revision;
 end;
 $$;
 

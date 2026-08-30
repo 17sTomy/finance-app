@@ -1,5 +1,5 @@
 {
-  "passed": 11,
+  "passed": 12,
   "checks": [
     {
       "name": "ruta privada protegida",
@@ -39,6 +39,10 @@
     },
     {
       "name": "preferencias sincronizadas",
+      "ok": true
+    },
+    {
+      "name": "concurrencia optimista rechaza snapshots obsoletos",
       "ok": true
     },
     {
