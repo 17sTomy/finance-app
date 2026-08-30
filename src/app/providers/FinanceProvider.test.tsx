@@ -15,8 +15,10 @@ const repository = vi.hoisted(() => ({
   importData: vi.fn(),
 }));
 const authenticatedUser = vi.hoisted(() => ({ id: 'user-1', email: 'user@example.test' }));
+const MockFinanceConflictError = vi.hoisted(() => class FinanceConflictError extends Error {});
 
 vi.mock('../../infrastructure/persistence/SupabaseFinanceRepository', () => ({
+  FinanceConflictError: MockFinanceConflictError,
   SupabaseFinanceRepository: class {
     constructor() {
       return repository;
@@ -36,7 +38,7 @@ describe('FinanceProvider persistence recovery', () => {
     vi.clearAllMocks();
     repository.loadPreferences.mockResolvedValue(null);
     repository.savePreferences.mockResolvedValue(undefined);
-    repository.save.mockResolvedValue(undefined);
+    repository.save.mockResolvedValue({ database: createDemoDatabase(), revision: 2 });
   });
 
   it('retries loading after the initial load fails without saving the empty database', async () => {
@@ -65,7 +67,7 @@ describe('FinanceProvider persistence recovery', () => {
   });
 
   it('retries a failed save without reloading the database', async () => {
-    repository.load.mockResolvedValue(createDemoDatabase());
+    repository.load.mockResolvedValue({ database: createDemoDatabase(), revision: 1 });
     repository.save.mockRejectedValueOnce(new Error('write unavailable'));
 
     render(
@@ -86,5 +88,29 @@ describe('FinanceProvider persistence recovery', () => {
 
     await waitFor(() => expect(repository.save).toHaveBeenCalledTimes(2));
     expect(repository.load).toHaveBeenCalledTimes(1);
+  });
+
+  it('stops stale writes and reloads the latest data after a concurrency conflict', async () => {
+    repository.load.mockResolvedValue({ database: createDemoDatabase(), revision: 7 });
+    repository.save.mockRejectedValueOnce(new MockFinanceConflictError('stale snapshot'));
+
+    render(
+      <FinanceProvider>
+        <MemoryRouter>
+          <Routes>
+            <Route element={<AppLayout />}>
+              <Route index element={<div>Finanzas cargadas</div>} />
+            </Route>
+          </Routes>
+        </MemoryRouter>
+      </FinanceProvider>,
+    );
+
+    expect(await screen.findByText(/cambiaron en otra pestaña o dispositivo/)).toBeTruthy();
+    expect(repository.save).toHaveBeenCalledTimes(1);
+
+    fireEvent.click(screen.getByRole('button', { name: 'Recargar datos' }));
+
+    await waitFor(() => expect(repository.load).toHaveBeenCalledTimes(2));
   });
 });

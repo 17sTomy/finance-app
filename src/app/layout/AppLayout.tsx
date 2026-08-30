@@ -17,7 +17,7 @@ const navigation = [
 ];
 
 export function AppLayout() {
-  const { showAmounts, toggleAmounts, isLoading, loadError, saveError, retryLoad, retrySave } = useFinance();
+  const { showAmounts, toggleAmounts, isLoading, loadError, saveError, hasSaveConflict, retryLoad, retrySave } = useFinance();
   const { user, signOut } = useAuth();
   const [menuOpen, setMenuOpen] = useState(false);
   const [remindersOpen, setRemindersOpen] = useState(false);
@@ -41,7 +41,7 @@ export function AppLayout() {
       </header>
       <div className="page">
         {loadError && <div className="data-error" role="alert"><span>{loadError}</span><button className="text-button" onClick={retryLoad}>Reintentar carga</button></div>}
-        {saveError && <div className="data-error" role="alert"><span>{saveError}</span><button className="text-button" onClick={retrySave}>Reintentar guardado</button></div>}
+        {saveError && <div className="data-error" role="alert"><span>{saveError}</span><button className="text-button" onClick={retrySave}>{hasSaveConflict ? 'Recargar datos' : 'Reintentar guardado'}</button></div>}
         {isLoading ? <div className="route-loading">Cargando tus finanzas…</div> : <Outlet />}
       </div>
     </main>

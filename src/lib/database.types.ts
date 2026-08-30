@@ -11,6 +11,7 @@ export interface UserPreferencesRow extends Record<string, unknown> {
   user_id: string;
   selected_month: string;
   show_amounts: boolean;
+  finance_revision: number;
   created_at: string;
   updated_at: string;
 }
@@ -59,7 +60,8 @@ export interface Database {
     };
     Views: Record<string, never>;
     Functions: {
-      replace_finance_data: { Args: { p_data: Json }; Returns: undefined };
+      get_finance_data: { Args: Record<string, never>; Returns: Json };
+      replace_finance_data: { Args: { p_data: Json; p_expected_revision: number }; Returns: number };
     };
     Enums: Record<string, never>;
     CompositeTypes: Record<string, never>;

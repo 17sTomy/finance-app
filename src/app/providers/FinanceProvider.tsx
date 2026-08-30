@@ -1,6 +1,6 @@
 import { createContext, useCallback, useContext, useEffect, useMemo, useRef, useState, type ReactNode } from 'react';
 import { addMonths, format, parseISO } from 'date-fns';
-import { SupabaseFinanceRepository } from '../../infrastructure/persistence/SupabaseFinanceRepository';
+import { FinanceConflictError, SupabaseFinanceRepository } from '../../infrastructure/persistence/SupabaseFinanceRepository';
 import { normalizeFinanceDatabaseIds } from '../../infrastructure/persistence/financeMappers';
 import type { CalendarEvent, Category, FinanceDatabase, FixedExpense, InstallmentPlan, MonthlyLimit, RecurringIncome, SavingsGoal, Transaction } from '../../modules/finance/domain/models';
 import { newId } from '../../modules/finance/domain/models';
@@ -19,6 +19,7 @@ interface FinanceContextValue {
   isLoading: boolean;
   loadError: string | null;
   saveError: string | null;
+  hasSaveConflict: boolean;
   retryLoad: () => void;
   retrySave: () => void;
   changeMonth: (offset: number) => void;
@@ -80,16 +81,27 @@ export function FinanceProvider({ children }: { children: ReactNode }) {
   const [hydrated, setHydrated] = useState(false);
   const [loadError, setLoadError] = useState<string | null>(null);
   const [saveError, setSaveError] = useState<string | null>(null);
+  const [hasSaveConflict, setHasSaveConflict] = useState(false);
   const saveQueue = useRef<Promise<void>>(Promise.resolve());
   const loadRequest = useRef(0);
+  const revision = useRef(0);
+  const saveConflict = useRef(false);
 
   const persistSnapshot = useCallback((snapshot: FinanceDatabase) => {
     saveQueue.current = saveQueue.current.catch(() => undefined).then(async () => {
-      await repository.save(snapshot);
+      if (saveConflict.current) return;
+      const stored = await repository.save(snapshot, revision.current);
+      revision.current = stored.revision;
       setSaveError(null);
     }).catch((error: unknown) => {
       console.error('Falló la sincronización con Supabase.', error);
-      setSaveError('No pudimos sincronizar los últimos cambios con Supabase. Revisá tu conexión y reintentá.');
+      if (error instanceof FinanceConflictError) {
+        saveConflict.current = true;
+        setHasSaveConflict(true);
+        setSaveError('Tus datos cambiaron en otra pestaña o dispositivo. Recargá la versión más reciente para evitar sobrescribirlos.');
+      } else {
+        setSaveError('No pudimos sincronizar los últimos cambios con Supabase. Revisá tu conexión y reintentá.');
+      }
     });
   }, []);
 
@@ -99,12 +111,16 @@ export function FinanceProvider({ children }: { children: ReactNode }) {
     setIsLoading(true);
     setLoadError(null);
     try {
-      const [stored, preferences] = await Promise.all([repository.load(user.id), repository.loadPreferences(user.id)]);
+      const [snapshot, preferences] = await Promise.all([repository.load(user.id), repository.loadPreferences(user.id)]);
       if (loadRequest.current !== request) return;
       const month = preferences?.selectedMonth ?? currentMonth();
+      revision.current = snapshot.revision;
+      saveConflict.current = false;
+      setHasSaveConflict(false);
+      setSaveError(null);
       setSelectedMonthState(month);
       setShowAmounts(preferences?.showAmounts ?? true);
-      setDatabase(ensureDatabaseMonth(stored, month));
+      setDatabase(ensureDatabaseMonth(snapshot.database, month));
       setHydrated(true);
     } catch (error: unknown) {
       if (loadRequest.current !== request) return;
@@ -116,7 +132,7 @@ export function FinanceProvider({ children }: { children: ReactNode }) {
   }, [user]);
 
   useEffect(() => {
-    void loadFinance();
+    void Promise.resolve().then(loadFinance);
     return () => { loadRequest.current += 1; };
   }, [loadFinance]);
 
@@ -170,8 +186,9 @@ export function FinanceProvider({ children }: { children: ReactNode }) {
     isLoading,
     loadError,
     saveError,
+    hasSaveConflict,
     retryLoad: () => { void loadFinance(); },
-    retrySave: () => persistSnapshot(database),
+    retrySave: () => { if (saveConflict.current) void loadFinance(); else persistSnapshot(database); },
     changeMonth,
     setSelectedMonth,
     toggleAmounts: () => setShowAmounts((current) => !current),
@@ -254,8 +271,9 @@ export function FinanceProvider({ children }: { children: ReactNode }) {
     deleteEvent: (id) => updateCurrentMonth((month) => ({ ...month, events: month.events.filter((item) => item.id !== id) })),
     importJson: async (raw) => {
       const imported = normalizeFinanceDatabaseIds(repository.importData(raw, database));
-      await repository.save(imported);
-      setDatabase(imported);
+      const stored = await repository.save(imported, revision.current);
+      revision.current = stored.revision;
+      setDatabase(stored.database);
     },
     exportJson: (scope) => {
       if (scope === 'month') return repository.exportMonth(database.months[selectedMonth]);
@@ -267,7 +285,7 @@ export function FinanceProvider({ children }: { children: ReactNode }) {
     },
     resetDemo: () => { setDatabase(normalizeFinanceDatabaseIds(createDemoDatabase())); setSelectedMonthState('2026-08'); },
   // eslint-disable-next-line react-hooks/exhaustive-deps
-  }), [database, selectedMonth, showAmounts, isLoading, loadError, saveError, changeMonth, setSelectedMonth, loadFinance, persistSnapshot]);
+  }), [database, selectedMonth, showAmounts, isLoading, loadError, saveError, hasSaveConflict, changeMonth, setSelectedMonth, loadFinance, persistSnapshot]);
 
   return <FinanceContext.Provider value={value}>{children}</FinanceContext.Provider>;
 }
