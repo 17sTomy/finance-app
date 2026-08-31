@@ -31,6 +31,35 @@ export function storeTransactionByDate(
   };
 }
 
+export function updateInstallmentSeries(
+  database: FinanceDatabase,
+  transaction: Transaction,
+  targetMonth: MonthlyFinanceData,
+): FinanceDatabase {
+  const updated = storeTransactionByDate(database, transaction, targetMonth);
+  if (!transaction.installmentPlanId || transaction.installmentNumber == null) return updated;
+
+  const months = Object.fromEntries(Object.entries(updated.months).map(([key, month]) => [key, {
+    ...month,
+    transactions: month.transactions.map((item) => item.installmentPlanId === transaction.installmentPlanId
+      && (item.installmentNumber ?? 0) >= transaction.installmentNumber!
+      ? { ...item, amount: transaction.amount }
+      : item),
+  }]));
+  const planTotal = Object.values(months)
+    .flatMap((month) => month.transactions)
+    .filter((item) => item.installmentPlanId === transaction.installmentPlanId)
+    .reduce((sum, item) => sum + item.amount, 0);
+
+  return {
+    ...updated,
+    months,
+    installmentPlans: updated.installmentPlans.map((plan) => plan.id === transaction.installmentPlanId
+      ? { ...plan, totalAmount: planTotal }
+      : plan),
+  };
+}
+
 export function addGoalContribution(
   database: FinanceDatabase,
   selectedMonth: string,

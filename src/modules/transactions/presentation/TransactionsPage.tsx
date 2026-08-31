@@ -16,7 +16,7 @@ const filters: { value: Filter; label: string }[] = [{ value: 'all', label: 'Tod
 const iconByType = { income: ArrowUp, expense: ArrowDown, saving: PiggyBank, investment: TrendingUp };
 const isIncoming = (item: Transaction) => item.type === 'income' || ((item.type === 'saving' || item.type === 'investment') && item.assetAction === 'sell');
 const typeLabel = (item: Transaction) => item.type === 'income' ? 'Ingreso' : item.type === 'expense' ? item.expenseType === 'fixed' ? 'Fijo' : 'Gasto' : item.type === 'saving' ? item.assetAction === 'sell' ? 'Venta USD' : 'Compra USD' : item.assetAction === 'sell' ? 'Venta CEDEAR' : 'Compra CEDEAR';
-const displayedMovement = (item: Transaction) => item.type === 'saving' && item.exchangeRate
+const displayedMovement = (item: Transaction) => item.type === 'saving' && item.exchangeRate != null
   ? { value: (item.assetAction === 'sell' ? 1 : -1) * item.amount * item.exchangeRate, currency: 'ARS' as const }
   : { value: isIncoming(item) ? item.amount : -item.amount, currency: item.currency };
 
@@ -46,7 +46,7 @@ export function TransactionsPage() {
         const Icon = iconByType[item.type];
         return <article className="transaction-row" key={item.id}>
           <span className={`transaction-icon transaction-icon--${item.type}`}><Icon size={18} /></span>
-          <div className="transaction-name"><strong>{item.name}{item.installmentNumber && <span className="installment-label">Cuota {item.installmentNumber}/{item.installmentCount}</span>}</strong><small>{categoryItem ? categoryLabel(categoryItem, database.categories) : 'Sin categoría'} · {formatShortDate(item.date)}{item.investmentTicker ? ` · ${item.investmentQuantity} ${item.investmentTicker}` : ''}{item.exchangeRate ? ` · USD ${item.amount.toLocaleString('es-AR')} · TC AR$ ${item.exchangeRate.toLocaleString('es-AR')}` : ''}</small></div>
+          <div className="transaction-name"><strong>{item.name}{item.installmentNumber && <span className="installment-label">Cuota {item.installmentNumber}/{item.installmentCount}</span>}</strong><small>{categoryItem ? categoryLabel(categoryItem, database.categories) : 'Sin categoría'} · {formatShortDate(item.date)}{item.investmentTicker ? ` · ${item.investmentQuantity} ${item.investmentTicker}` : ''}{item.exchangeRate != null ? ` · USD ${item.amount.toLocaleString('es-AR')} · TC AR$ ${item.exchangeRate.toLocaleString('es-AR')}` : ''}</small></div>
           <span className={`type-badge type-badge--${item.type}`}>{typeLabel(item)}</span>
           <MoneyValue value={displayedMovement(item).value} currency={displayedMovement(item).currency} signed className={`transaction-amount transaction-amount--${item.type}`} />
           <div className="row-actions"><button className="icon-button" aria-label={`Editar ${item.name}`} onClick={() => setEditing(item)}><Pencil size={17} /></button><button className="icon-button" aria-label={`Eliminar ${item.name}`} onClick={() => setDeleting(item)}><Trash2 size={17} /></button></div>

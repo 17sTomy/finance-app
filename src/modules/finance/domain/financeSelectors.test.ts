@@ -29,6 +29,26 @@ describe('selectores financieros', () => {
     expect(dollarSavingsBalance(database, '2026-08')).toBe(75);
   });
 
+  it('suma dólares comprados a cotización cero sin descontar pesos del balance', () => {
+    const freeDollarPurchase: Transaction = {
+      id: 'free-usd',
+      name: 'Dólares recibidos',
+      amount: 100,
+      currency: 'USD',
+      exchangeRate: 0,
+      assetAction: 'buy',
+      date: '2026-08-20',
+      type: 'saving',
+    };
+    const database = {
+      version: 1 as const, categories: [], fixedExpenses: [], recurringIncomes: [], installmentPlans: [], goals: [],
+      months: { '2026-08': { year: 2026, month: 8, limits: [], events: [], createdAt: '', transactions: [freeDollarPurchase] } },
+    };
+
+    expect(calculateSummary([freeDollarPurchase])).toMatchObject({ assetPurchases: 0, savings: 0, balance: 0 });
+    expect(dollarSavingsBalance(database, '2026-08')).toBe(100);
+  });
+
   it('acumula CEDEARs y descuenta las ventas de la tenencia', () => {
     const database = {
       version: 1 as const, categories: [], fixedExpenses: [], recurringIncomes: [], installmentPlans: [], goals: [],

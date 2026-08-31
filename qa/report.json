@@ -1,5 +1,5 @@
 {
-  "passed": 14,
+  "passed": 15,
   "checks": [
     {
       "name": "ruta privada protegida",
@@ -26,11 +26,15 @@
       "ok": true
     },
     {
-      "name": "compra USD con cotización y nuevos CEDEARs",
+      "name": "compras USD con cotización positiva o costo cero y nuevos CEDEARs",
       "ok": true
     },
     {
       "name": "CRUD persistido después de recargar",
+      "ok": true
+    },
+    {
+      "name": "edición de cuota propagada sólo desde la cuota actual",
       "ok": true
     },
     {

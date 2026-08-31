@@ -21,7 +21,7 @@ const assetDirection = (transaction: Transaction) => transaction.assetAction ===
 
 export function transactionAmountInCurrency(transaction: Transaction, currency: Currency): number {
   if (transaction.currency === currency) return transaction.amount;
-  if (currency === 'ARS' && transaction.type === 'saving' && transaction.currency === 'USD' && transaction.exchangeRate) {
+  if (currency === 'ARS' && transaction.type === 'saving' && transaction.currency === 'USD' && transaction.exchangeRate != null) {
     return transaction.amount * transaction.exchangeRate;
   }
   return 0;

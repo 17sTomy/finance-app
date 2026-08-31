@@ -174,12 +174,21 @@ try {
   await dialog.getByLabel('Tipo de cambio (ARS por USD)').fill('1500');
   await dialog.getByLabel('Fecha').fill('2026-08-18');
   await dialog.getByRole('button', { name: 'Guardar movimiento' }).click();
+  await page.getByRole('button', { name: 'Comprar/vender USD' }).click();
+  dialog = page.getByRole('dialog');
+  await dialog.getByLabel('Nombre').fill('Compra USD sin costo QA');
+  await dialog.getByLabel('Cantidad de dólares').fill('50');
+  await dialog.getByLabel('Tipo de cambio (ARS por USD)').fill('0');
+  await dialog.getByLabel('Fecha').fill('2026-08-19');
+  await dialog.getByText('$ 0', { exact: true }).waitFor();
+  await page.screenshot({ path: fileURLToPath(new URL('saving-usd-zero.png', outputDir)), fullPage: true });
+  await dialog.getByRole('button', { name: 'Guardar movimiento' }).click();
   await page.getByRole('button', { name: 'Comprar/vender CEDEAR' }).click();
   dialog = page.getByRole('dialog');
   const cedearValues = await dialog.getByLabel('CEDEAR').locator('option').evaluateAll((options) => options.map((option) => option.value));
   assert(['AAPL', 'AMZN', 'KO', 'XOM', 'GOOGL', 'NVDA', 'MSFT'].every((ticker) => cedearValues.includes(ticker)), 'Faltan los nuevos CEDEARs en el formulario');
   await dialog.getByRole('button', { name: 'Cancelar' }).click();
-  check('compra USD con cotización y nuevos CEDEARs');
+  check('compras USD con cotización positiva o costo cero y nuevos CEDEARs');
 
   await page.getByRole('button', { name: 'Nuevo movimiento' }).click();
   dialog = page.getByRole('dialog');
@@ -197,6 +206,29 @@ try {
   await page.reload({ waitUntil: 'domcontentloaded' });
   await page.getByText('Prueba QA Supabase', { exact: true }).waitFor();
   check('CRUD persistido después de recargar');
+
+  await page.getByRole('button', { name: 'Nuevo movimiento' }).click();
+  dialog = page.getByRole('dialog');
+  await dialog.getByLabel('Nombre').fill('Suscripción QA');
+  await dialog.getByLabel('Importe').fill('12000');
+  await dialog.getByLabel('Fecha').fill('2026-01-10');
+  await dialog.getByLabel('Es una compra en cuotas').check();
+  await dialog.getByLabel('Cantidad de cuotas').fill('12');
+  await dialog.getByRole('button', { name: 'Crear plan de cuotas' }).click();
+  await page.getByLabel('Mes siguiente').click();
+  await page.getByLabel('Mes siguiente').click();
+  const octoberInstallment = page.locator('.transaction-row').filter({ hasText: 'Suscripción QA' });
+  await octoberInstallment.waitFor();
+  await octoberInstallment.getByRole('button', { name: 'Editar Suscripción QA' }).click();
+  dialog = page.getByRole('dialog');
+  assert((await dialog.innerText()).includes('esta cuota y a las siguientes'), 'La edición no informa que preserva las cuotas anteriores');
+  await dialog.getByLabel('Importe').fill('2000');
+  await page.waitForTimeout(300);
+  await page.screenshot({ path: fileURLToPath(new URL('installment-future-edit.png', outputDir)), fullPage: true });
+  await dialog.getByRole('button', { name: 'Guardar cambios' }).click();
+  await page.getByLabel('Mes anterior').click();
+  await page.getByLabel('Mes anterior').click();
+  check('edición de cuota propagada sólo desde la cuota actual');
 
   const notebookRow = page.locator('.transaction-row').filter({ hasText: 'Notebook' });
   assert(await notebookRow.count() === 1, 'No se encontró la cuota de Notebook para probar su eliminación');
@@ -218,6 +250,14 @@ try {
   assert(authA.user.user_metadata.nickname === 'QA Editado', 'El apodo editado no persistió en Supabase Auth');
   const { data: dollarPurchase, error: dollarPurchaseError } = await apiA.from('transactions').select('amount, exchange_rate, asset_action').eq('name', 'Compra USD QA').single();
   assert(!dollarPurchaseError && dollarPurchase.amount === 100 && dollarPurchase.exchange_rate === 1500 && dollarPurchase.asset_action === 'buy', 'La compra USD no guardó cantidad, cotización y operación');
+  const { data: zeroCostDollarPurchase, error: zeroCostDollarPurchaseError } = await apiA.from('transactions').select('amount, exchange_rate, asset_action').eq('name', 'Compra USD sin costo QA').single();
+  assert(!zeroCostDollarPurchaseError && zeroCostDollarPurchase.amount === 50 && zeroCostDollarPurchase.exchange_rate === 0 && zeroCostDollarPurchase.asset_action === 'buy', 'La compra USD a costo cero no persistió correctamente');
+  const { data: qaInstallments, error: qaInstallmentsError } = await apiA.from('transactions').select('amount, installment_number').eq('name', 'Suscripción QA').order('installment_number');
+  const { data: qaInstallmentPlan, error: qaInstallmentPlanError } = await apiA.from('installment_plans').select('total_amount').eq('description', 'Suscripción QA').single();
+  assert(!qaInstallmentsError && qaInstallments?.length === 12, 'El plan QA no conservó sus 12 cuotas');
+  assert(qaInstallments.slice(0, 9).every((item) => item.amount === 1000), 'Editar la cuota 10 alteró cuotas ya pagadas');
+  assert(qaInstallments.slice(9).every((item) => item.amount === 2000), 'El nuevo importe no se propagó desde la cuota 10 hasta la 12');
+  assert(!qaInstallmentPlanError && qaInstallmentPlan.total_amount === 15000, 'El total del plan no refleja la actualización de las cuotas futuras');
   const { data: notebookPlans, error: notebookPlansError } = await apiA.from('installment_plans').select('id').eq('description', 'Notebook');
   const { data: notebookInstallments, error: notebookInstallmentsError } = await apiA.from('transactions').select('id').eq('name', 'Notebook');
   assert(!notebookPlansError && !notebookInstallmentsError && notebookPlans?.length === 0 && notebookInstallments?.length === 0, 'Eliminar una cuota no eliminó el plan y sus cuotas futuras');

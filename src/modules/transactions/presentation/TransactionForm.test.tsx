@@ -8,6 +8,7 @@ const finance = vi.hoisted(() => ({
     categories: [
       { id: 'sports', name: 'Deportes', icon: '🏅', color: '#123456', kind: 'expense' as const },
       { id: 'gym', name: 'Gimnasio', icon: '🏋️', color: '#234567', kind: 'expense' as const, parentId: 'sports' },
+      { id: 'savings', name: 'Ahorro en dólares', icon: '◎', color: '#345678', kind: 'saving' as const },
     ],
     months: {},
   },
@@ -39,5 +40,23 @@ describe('transaction category selection', () => {
 
     const values = Array.from((screen.getByLabelText('CEDEAR') as HTMLSelectElement).options).map((option) => option.value);
     expect(values).toEqual(expect.arrayContaining(['AMZN', 'KO', 'XOM']));
+  });
+
+  it('allows adding purchased dollars at a zero exchange rate without discounting pesos', () => {
+    render(<TransactionForm defaultType="saving" onDone={vi.fn()} />);
+
+    fireEvent.change(screen.getByLabelText('Nombre'), { target: { value: 'Dólares recibidos' } });
+    fireEvent.change(screen.getByLabelText('Cantidad de dólares'), { target: { value: '100' } });
+    fireEvent.change(screen.getByLabelText('Tipo de cambio (ARS por USD)'), { target: { value: '0' } });
+
+    expect(screen.getByText('$ 0')).toBeTruthy();
+    fireEvent.click(screen.getByRole('button', { name: 'Guardar movimiento' }));
+
+    expect(addTransaction).toHaveBeenCalledWith(expect.objectContaining({
+      type: 'saving',
+      assetAction: 'buy',
+      amount: 100,
+      exchangeRate: 0,
+    }));
   });
 });

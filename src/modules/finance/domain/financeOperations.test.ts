@@ -1,7 +1,8 @@
 import { createDemoDatabase } from '../infrastructure/demoData';
 import { financeDatabaseToPayload, rowsToFinanceDatabase, type FinanceRows } from '../../../infrastructure/persistence/financeMappers';
-import { addGoalContribution, copyPreviousMonthLimits, deleteTransactionCascade, storeTransactionByDate } from './financeOperations';
+import { addGoalContribution, copyPreviousMonthLimits, deleteTransactionCascade, storeTransactionByDate, updateInstallmentSeries } from './financeOperations';
 import { calculateSummary, goalTotal } from './financeSelectors';
+import { generateInstallments } from './projections';
 
 function reloadFromPersistence(database: ReturnType<typeof createDemoDatabase>) {
   const payload = financeDatabaseToPayload(database);
@@ -96,5 +97,51 @@ describe('operaciones financieras sincronizadas', () => {
     expect(result.months['2026-09'].transactions.filter((item) => item.id === edited.id)).toEqual([edited]);
     expect(reloaded.months['2026-08'].transactions.some((item) => item.name === edited.name)).toBe(false);
     expect(reloaded.months['2026-09'].transactions.filter((item) => item.name === edited.name)).toHaveLength(1);
+  });
+
+  it('actualiza el importe de la cuota editada y las siguientes sin alterar las ya pagadas', () => {
+    const plan = {
+      id: 'course-plan',
+      description: 'Curso',
+      totalAmount: 12000,
+      installmentCount: 12,
+      firstInstallmentDate: '2026-01-10',
+      currency: 'ARS' as const,
+      categoryId: 'education',
+    };
+    const months = Object.fromEntries(generateInstallments(plan).map((transaction) => {
+      const key = transaction.date.slice(0, 7);
+      return [key, {
+        year: Number(key.slice(0, 4)),
+        month: Number(key.slice(5, 7)),
+        transactions: [transaction],
+        limits: [],
+        events: [],
+        createdAt: '',
+      }];
+    }));
+    const database = {
+      version: 1 as const,
+      categories: [],
+      fixedExpenses: [],
+      recurringIncomes: [],
+      installmentPlans: [plan],
+      goals: [],
+      months,
+    };
+    const tenth = database.months['2026-10'].transactions[0];
+
+    const result = updateInstallmentSeries(database, { ...tenth, amount: 2000 }, database.months['2026-10']);
+    const installments = Object.values(result.months)
+      .flatMap((month) => month.transactions)
+      .filter((transaction) => transaction.installmentPlanId === plan.id)
+      .sort((a, b) => (a.installmentNumber ?? 0) - (b.installmentNumber ?? 0));
+
+    expect(installments.map((transaction) => transaction.amount)).toEqual([
+      1000, 1000, 1000, 1000, 1000, 1000, 1000, 1000, 1000,
+      2000, 2000, 2000,
+    ]);
+    expect(result.installmentPlans[0].totalAmount).toBe(15000);
+    expect(reloadFromPersistence(result).months['2026-12'].transactions[0].amount).toBe(2000);
   });
 });
