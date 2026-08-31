@@ -10,7 +10,8 @@ interface Props { initial?: Transaction; defaultType?: TransactionType; onDone: 
 export function TransactionForm({ initial, defaultType = 'expense', onDone }: Props) {
   const { database, selectedMonth, addTransaction, updateTransaction, addInstallmentPlan } = useFinance();
   const [type, setType] = useState<TransactionType>(initial?.type ?? defaultType);
-  const availableCategories = database.categories.filter((item) => item.kind === type || item.kind === 'all' || item.id === initial?.categoryId);
+  const isAsset = type === 'saving' || type === 'investment';
+  const availableCategories = database.categories.filter((item) => isAsset || item.kind === type || item.kind === 'all' || item.id === initial?.categoryId);
   const mainCategories = availableCategories.filter((item) => !item.parentId);
   const initialCategory = database.categories.find((item) => item.id === initial?.categoryId);
   const initialMainCategory = initialCategory ? categoryRoot(initialCategory, database.categories) : undefined;
@@ -18,7 +19,7 @@ export function TransactionForm({ initial, defaultType = 'expense', onDone }: Pr
   const [amount, setAmount] = useState(initial?.amount ? String(initial.amount) : '');
   const [date, setDate] = useState(initial?.date ?? (todayISO().startsWith(selectedMonth) ? todayISO() : `${selectedMonth}-01`));
   const [currency, setCurrency] = useState<Currency>(initial?.currency ?? (defaultType === 'saving' ? 'USD' : 'ARS'));
-  const [categoryId, setCategoryId] = useState(initialMainCategory?.id ?? mainCategories[0]?.id ?? '');
+  const [categoryId, setCategoryId] = useState(initialMainCategory?.id ?? mainCategories.find((item) => item.kind === type)?.id ?? mainCategories[0]?.id ?? '');
   const [subcategoryId, setSubcategoryId] = useState(initialCategory?.parentId ? initialCategory.id : '');
   const [notes, setNotes] = useState(initial?.notes ?? '');
   const [investmentTicker, setInvestmentTicker] = useState(initial?.investmentTicker ?? 'SPY');
@@ -32,13 +33,13 @@ export function TransactionForm({ initial, defaultType = 'expense', onDone }: Pr
   const selectedCategoryId = subcategoryId || categoryId;
   const availableDollars = dollarSavingsBalance(database, selectedMonth, initial?.id);
   const availableCedears = investmentHoldings(database, selectedMonth, initial?.id).find((holding) => holding.ticker === investmentTicker)?.quantity ?? 0;
-  const isAsset = type === 'saving' || type === 'investment';
   const changeType = (next: TransactionType) => {
-    const nextCategories = database.categories.filter((item) => !item.parentId && (item.kind === next || item.kind === 'all'));
+    const nextIsAsset = next === 'saving' || next === 'investment';
+    const nextCategories = database.categories.filter((item) => !item.parentId && (nextIsAsset || item.kind === next || item.kind === 'all'));
     setType(next);
     setCurrency(next === 'saving' ? 'USD' : 'ARS');
     setAssetAction('buy');
-    setCategoryId(nextCategories[0]?.id ?? '');
+    setCategoryId(nextCategories.find((item) => item.kind === next)?.id ?? nextCategories[0]?.id ?? '');
     setSubcategoryId('');
   };
 

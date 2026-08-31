@@ -4,12 +4,11 @@ import { FinanceConflictError, SupabaseFinanceRepository } from '../../infrastru
 import { normalizeFinanceDatabaseIds } from '../../infrastructure/persistence/financeMappers';
 import type { CalendarEvent, Category, FinanceDatabase, FixedExpense, InstallmentPlan, MonthlyLimit, RecurringIncome, SavingsGoal, Transaction } from '../../modules/finance/domain/models';
 import { newId } from '../../modules/finance/domain/models';
-import { generateInstallments, projectFixedExpense, projectSalary, synchronizeSalaryDates } from '../../modules/finance/domain/projections';
-import { addGoalContribution, copyPreviousMonthLimits, deleteTransactionCascade, storeTransactionByDate, updateInstallmentSeries } from '../../modules/finance/domain/financeOperations';
+import { generateInstallments, projectSalary, synchronizeSalaryDates } from '../../modules/finance/domain/projections';
+import { addGoalContribution, copyPreviousMonthLimits, deleteTransactionCascade, saveFixedExpenseSchedule, storeTransactionByDate, synchronizeFixedExpensesForMonth, updateInstallmentSeries } from '../../modules/finance/domain/financeOperations';
 import { createDemoDatabase, createMonth } from '../../modules/finance/infrastructure/demoData';
 import { getCachedHolidayDates, loadArgentinaHolidayDates } from '../../modules/finance/infrastructure/argentinaHolidays';
 import { useAuth } from './AuthProvider';
-import { todayISO } from '../../shared/utils/dates';
 
 interface FinanceContextValue {
   database: FinanceDatabase;
@@ -53,23 +52,16 @@ const FinanceContext = createContext<FinanceContextValue | null>(null);
 const currentMonth = () => format(new Date(), 'yyyy-MM');
 const emptyDatabase = (): FinanceDatabase => ({ version: 1, months: {}, categories: [], fixedExpenses: [], recurringIncomes: [], installmentPlans: [], goals: [] });
 
-function synchronizeDueFixedExpensesForMonth(source: FinanceDatabase, key: string, dueBy = todayISO()): FinanceDatabase {
-  const [year, month] = key.split('-').map(Number);
-  const snapshot = source.months[key] ?? { ...createMonth(year, month, source, false, dueBy), limits: copyPreviousMonthLimits(source, key) };
-  const existingFixedIds = new Set(snapshot.transactions.filter((item) => item.recurrenceId && item.expenseType === 'fixed' && item.date <= dueBy).map((item) => item.recurrenceId));
-  const dueFixedTransactions = source.fixedExpenses
-    .filter((item) => !existingFixedIds.has(item.id))
-    .map((item) => projectFixedExpense(item, year, month, dueBy))
-    .filter((item): item is Transaction => item !== null);
-  const transactions = [
-    ...snapshot.transactions.filter((item) => !(item.recurrenceId && item.expenseType === 'fixed' && item.date > dueBy)),
-    ...dueFixedTransactions,
-  ];
-  return { ...source, months: { ...source.months, [key]: { ...snapshot, transactions } } };
-}
-
 function ensureDatabaseMonth(source: FinanceDatabase, key: string) {
-  return synchronizeDueFixedExpensesForMonth(source, key);
+  const [year, month] = key.split('-').map(Number);
+  const complete = source.months[key] ? source : {
+    ...source,
+    months: {
+      ...source.months,
+      [key]: { ...createMonth(year, month, source), limits: copyPreviousMonthLimits(source, key) },
+    },
+  };
+  return synchronizeFixedExpensesForMonth(complete, key);
 }
 
 export function FinanceProvider({ children }: { children: ReactNode }) {
@@ -181,7 +173,7 @@ export function FinanceProvider({ children }: { children: ReactNode }) {
   const value = useMemo<FinanceContextValue>(() => ({
     database,
     selectedMonth,
-    monthData: database.months[selectedMonth] ?? createMonth(...selectedMonth.split('-').map(Number) as [number, number], database, false, todayISO()),
+    monthData: database.months[selectedMonth] ?? createMonth(...selectedMonth.split('-').map(Number) as [number, number], database),
     showAmounts,
     isLoading,
     loadError,
@@ -208,17 +200,11 @@ export function FinanceProvider({ children }: { children: ReactNode }) {
         : storeTransactionByDate(complete, transaction, complete.months[targetKey]);
     }),
     deleteTransaction: (id) => setDatabase((current) => deleteTransactionCascade(current, id)),
-    saveFixedExpense: (expense) => setDatabase((current) => {
-      const exists = current.fixedExpenses.some((item) => item.id === expense.id);
-      const fixedExpenses = exists ? current.fixedExpenses.map((item) => item.id === expense.id ? expense : item) : [...current.fixedExpenses, expense];
-      const snapshot = current.months[selectedMonth];
-      const [year, month] = selectedMonth.split('-').map(Number);
-      const projected = projectFixedExpense(expense, year, month, todayISO());
-      if (!snapshot || !projected) return { ...current, fixedExpenses };
-      const transactions = [...snapshot.transactions.filter((item) => item.recurrenceId !== expense.id), projected];
-      return { ...current, fixedExpenses, months: { ...current.months, [selectedMonth]: { ...snapshot, transactions } } };
+    saveFixedExpense: (expense) => setDatabase((current) => saveFixedExpenseSchedule(current, expense, selectedMonth)),
+    toggleFixedExpense: (id) => setDatabase((current) => {
+      const expense = current.fixedExpenses.find((item) => item.id === id);
+      return expense ? saveFixedExpenseSchedule(current, { ...expense, active: !expense.active }, selectedMonth) : current;
     }),
-    toggleFixedExpense: (id) => setDatabase((current) => ({ ...current, fixedExpenses: current.fixedExpenses.map((item) => item.id === id ? { ...item, active: !item.active } : item) })),
     deleteFixedExpense: (id) => setDatabase((current) => ({ ...current, fixedExpenses: current.fixedExpenses.filter((item) => item.id !== id), months: Object.fromEntries(Object.entries(current.months).map(([key, month]) => [key, { ...month, transactions: month.transactions.map((item) => item.recurrenceId === id ? { ...item, recurrenceId: undefined } : item) }])) })),
     saveRecurringIncome: (income) => setDatabase((current) => {
       const recurringIncomes = current.recurringIncomes.some((item) => item.id === income.id) ? current.recurringIncomes.map((item) => item.id === income.id ? income : item) : [...current.recurringIncomes, income];

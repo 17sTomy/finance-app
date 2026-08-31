@@ -109,4 +109,16 @@ describe('category hierarchy planning UI', () => {
       finance.monthData.limits = limits;
     }
   });
+
+  it('accepts an integer amount for a new goal without a native step mismatch', () => {
+    renderPage('goals');
+    fireEvent.click(screen.getByRole('button', { name: 'Agregar objetivo' }));
+
+    const amount = screen.getByLabelText('Monto objetivo') as HTMLInputElement;
+    fireEvent.change(amount, { target: { value: '4000000' } });
+
+    expect(amount.min).toBe('0.01');
+    expect(amount.step).toBe('0.01');
+    expect(amount.validity.stepMismatch).toBe(false);
+  });
 });

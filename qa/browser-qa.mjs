@@ -142,6 +142,26 @@ try {
   await page.screenshot({ path: fileURLToPath(new URL('planning-categories-accordion.png', outputDir)), fullPage: true });
   check('jerarquía de categorías, acordeón y desglose del límite');
 
+  await page.getByRole('link', { name: 'Gastos fijos' }).click();
+  for (const [name, dueDay] of [['Vencimiento QA día 1', '1'], ['Vencimiento QA día 10', '10']]) {
+    await page.getByRole('button', { name: 'Nuevo gasto fijo' }).click();
+    const fixedDialog = page.getByRole('dialog');
+    await fixedDialog.getByLabel('Nombre').fill(name);
+    await fixedDialog.getByLabel('Importe').fill('1000');
+    await fixedDialog.getByLabel('Día de vencimiento').fill(dueDay);
+    await fixedDialog.getByLabel('Fecha de inicio').fill('2026-09-01');
+    await fixedDialog.getByRole('button', { name: 'Guardar gasto fijo' }).click();
+    await page.getByRole('heading', { name, exact: true }).waitFor();
+  }
+  await page.getByRole('link', { name: 'Calendario' }).click();
+  await page.getByLabel('Mes siguiente').click();
+  await page.getByText('Vencimiento QA día 1', { exact: true }).waitFor();
+  await page.getByText('Vencimiento QA día 10', { exact: true }).waitFor();
+  await page.screenshot({ path: fileURLToPath(new URL('calendar-september-regression.png', outputDir)), fullPage: true });
+  check('calendario futuro con vencimientos del día 1 y del día 10');
+  await page.getByLabel('Mes anterior').click();
+  await page.getByRole('link', { name: 'Planificación' }).click();
+
   await page.getByLabel('Mes siguiente').click();
   await page.getByRole('button', { name: 'Límites', exact: true }).click();
   await page.locator('.limit-card').filter({ hasText: 'Deportes' }).waitFor();
@@ -169,6 +189,9 @@ try {
   await page.getByRole('link', { name: 'Inicio' }).click();
   await page.getByRole('button', { name: 'Comprar/vender USD' }).click();
   let dialog = page.getByRole('dialog');
+  const savingCategoryLabels = await dialog.getByLabel('Categoría', { exact: true }).locator('option').allTextContents();
+  assert(['Vivienda', 'Sueldo', 'Ahorro en dólares', 'Inversiones'].every((category) => savingCategoryLabels.some((label) => label.includes(category))), `Ahorro no muestra todas las categorías principales: ${savingCategoryLabels.join(', ')}`);
+  assert((await dialog.getByLabel('Categoría', { exact: true }).locator('option:checked').innerText()).includes('Ahorro en dólares'), 'Ahorro no conserva su categoría propia como opción inicial');
   await dialog.getByLabel('Nombre').fill('Compra USD QA');
   await dialog.getByLabel('Cantidad de dólares').fill('100');
   await dialog.getByLabel('Tipo de cambio (ARS por USD)').fill('1500');
@@ -187,8 +210,13 @@ try {
   dialog = page.getByRole('dialog');
   const cedearValues = await dialog.getByLabel('CEDEAR').locator('option').evaluateAll((options) => options.map((option) => option.value));
   assert(['AAPL', 'AMZN', 'KO', 'XOM', 'GOOGL', 'NVDA', 'MSFT'].every((ticker) => cedearValues.includes(ticker)), 'Faltan los nuevos CEDEARs en el formulario');
+  const investmentCategoryLabels = await dialog.getByLabel('Categoría', { exact: true }).locator('option').allTextContents();
+  assert(['Vivienda', 'Sueldo', 'Ahorro en dólares', 'Inversiones'].every((category) => investmentCategoryLabels.some((label) => label.includes(category))), `Inversión no muestra todas las categorías principales: ${investmentCategoryLabels.join(', ')}`);
+  await dialog.getByLabel('Categoría', { exact: true }).selectOption({ label: '🏅 Deportes' });
+  await dialog.getByLabel('Subcategoría (opcional)', { exact: true }).selectOption({ label: '🏋️ Gimnasio' });
+  assert((await dialog.getByLabel('Categoría', { exact: true }).locator('option:checked').innerText()).includes('Deportes') && (await dialog.getByLabel('Subcategoría (opcional)', { exact: true }).locator('option:checked').innerText()).includes('Gimnasio'), 'Inversión no permite seleccionar categoría y subcategoría');
   await dialog.getByRole('button', { name: 'Cancelar' }).click();
-  check('compras USD con cotización positiva o costo cero y nuevos CEDEARs');
+  check('categorías completas en ahorro e inversión, compra USD sin costo y nuevos CEDEARs');
 
   await page.getByRole('button', { name: 'Nuevo movimiento' }).click();
   dialog = page.getByRole('dialog');
@@ -240,6 +268,13 @@ try {
 
   await page.getByRole('link', { name: 'Planificación' }).click();
   await page.getByRole('button', { name: 'Objetivos' }).click();
+  await page.getByRole('button', { name: 'Agregar objetivo' }).click();
+  dialog = page.getByRole('dialog');
+  await dialog.getByLabel('Monto objetivo').fill('4000000');
+  const goalAmountValidity = await dialog.getByLabel('Monto objetivo').evaluate((input) => ({ valid: input.checkValidity(), message: input.validationMessage, min: input.min, step: input.step }));
+  assert(goalAmountValidity.valid && goalAmountValidity.message === '' && goalAmountValidity.min === '0.01' && goalAmountValidity.step === '0.01', `El monto entero del objetivo conserva un error nativo: ${goalAmountValidity.message}`);
+  await dialog.getByRole('button', { name: 'Cancelar' }).click();
+  check('monto entero válido al crear un objetivo');
   await page.getByRole('button', { name: '+ Aportar' }).first().click();
   dialog = page.getByRole('dialog');
   await dialog.getByLabel('Importe').fill('10000');

@@ -1,5 +1,5 @@
 {
-  "passed": 15,
+  "passed": 17,
   "checks": [
     {
       "name": "ruta privada protegida",
@@ -18,6 +18,10 @@
       "ok": true
     },
     {
+      "name": "calendario futuro con vencimientos del día 1 y del día 10",
+      "ok": true
+    },
+    {
       "name": "límites heredados y progreso histórico de objetivos",
       "ok": true
     },
@@ -26,7 +30,7 @@
       "ok": true
     },
     {
-      "name": "compras USD con cotización positiva o costo cero y nuevos CEDEARs",
+      "name": "categorías completas en ahorro e inversión, compra USD sin costo y nuevos CEDEARs",
       "ok": true
     },
     {
@@ -35,6 +39,10 @@
     },
     {
       "name": "edición de cuota propagada sólo desde la cuota actual",
+      "ok": true
+    },
+    {
+      "name": "monto entero válido al crear un objetivo",
       "ok": true
     },
     {

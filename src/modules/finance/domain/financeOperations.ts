@@ -1,5 +1,6 @@
-import type { FinanceDatabase, MonthlyFinanceData, MonthlyLimit, Transaction } from './models';
+import type { FinanceDatabase, FixedExpense, MonthlyFinanceData, MonthlyLimit, Transaction } from './models';
 import { newId } from './models';
+import { projectFixedExpense } from './projections';
 
 export function copyPreviousMonthLimits(
   database: FinanceDatabase,
@@ -9,6 +10,44 @@ export function copyPreviousMonthLimits(
   const previousKey = Object.keys(database.months).filter((key) => key < targetMonth).sort().at(-1);
   if (!previousKey) return [];
   return database.months[previousKey].limits.map((limit) => ({ ...limit, id: idFactory() }));
+}
+
+export function synchronizeFixedExpensesForMonth(database: FinanceDatabase, targetMonth: string): FinanceDatabase {
+  const snapshot = database.months[targetMonth];
+  if (!snapshot) return database;
+  const existingFixedIds = new Set(snapshot.transactions
+    .filter((item) => item.recurrenceId && item.expenseType === 'fixed')
+    .map((item) => item.recurrenceId));
+  const projections = database.fixedExpenses
+    .filter((expense) => !existingFixedIds.has(expense.id))
+    .map((expense) => projectFixedExpense(expense, snapshot.year, snapshot.month))
+    .filter((item): item is Transaction => item !== null);
+  if (projections.length === 0) return database;
+  return {
+    ...database,
+    months: {
+      ...database.months,
+      [targetMonth]: { ...snapshot, transactions: [...snapshot.transactions, ...projections] },
+    },
+  };
+}
+
+export function saveFixedExpenseSchedule(database: FinanceDatabase, expense: FixedExpense, fromMonth: string): FinanceDatabase {
+  const fixedExpenses = database.fixedExpenses.some((item) => item.id === expense.id)
+    ? database.fixedExpenses.map((item) => item.id === expense.id ? expense : item)
+    : [...database.fixedExpenses, expense];
+  const months = Object.fromEntries(Object.entries(database.months).map(([key, month]) => {
+    if (key < fromMonth) return [key, month];
+    const projection = projectFixedExpense(expense, month.year, month.month);
+    return [key, {
+      ...month,
+      transactions: [
+        ...month.transactions.filter((item) => item.recurrenceId !== expense.id),
+        ...(projection ? [projection] : []),
+      ],
+    }];
+  }));
+  return { ...database, fixedExpenses, months };
 }
 
 export function storeTransactionByDate(

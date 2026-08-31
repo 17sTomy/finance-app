@@ -1,6 +1,6 @@
 import { createDemoDatabase } from '../infrastructure/demoData';
 import { financeDatabaseToPayload, rowsToFinanceDatabase, type FinanceRows } from '../../../infrastructure/persistence/financeMappers';
-import { addGoalContribution, copyPreviousMonthLimits, deleteTransactionCascade, storeTransactionByDate, updateInstallmentSeries } from './financeOperations';
+import { addGoalContribution, copyPreviousMonthLimits, deleteTransactionCascade, saveFixedExpenseSchedule, storeTransactionByDate, synchronizeFixedExpensesForMonth, updateInstallmentSeries } from './financeOperations';
 import { calculateSummary, goalTotal } from './financeSelectors';
 import { generateInstallments } from './projections';
 
@@ -143,5 +143,34 @@ describe('operaciones financieras sincronizadas', () => {
     ]);
     expect(result.installmentPlans[0].totalAmount).toBe(15000);
     expect(reloadFromPersistence(result).months['2026-12'].transactions[0].amount).toBe(2000);
+  });
+
+  it('proyecta en un mes futuro todos los vencimientos aunque todavía no hayan llegado', () => {
+    const database = createDemoDatabase();
+    database.months['2026-09'] = { year: 2026, month: 9, transactions: [], limits: [], events: [], createdAt: '' };
+    database.fixedExpenses = [
+      { id: 'due-first', name: 'Vence el primero', amount: 1000, currency: 'ARS', categoryId: 'housing', startDate: '2026-09-01', dueDay: 1, duration: { type: 'unlimited' }, reminderEnabled: true, active: true },
+      { id: 'due-tenth', name: 'Vence el diez', amount: 2000, currency: 'ARS', categoryId: 'housing', startDate: '2026-09-01', dueDay: 10, duration: { type: 'unlimited' }, reminderEnabled: true, active: true },
+    ];
+
+    const result = synchronizeFixedExpensesForMonth(database, '2026-09');
+    const projected = result.months['2026-09'].transactions.filter((item) => item.expenseType === 'fixed');
+
+    expect(projected.map((item) => [item.name, item.date])).toEqual([
+      ['Vence el primero', '2026-09-01'],
+      ['Vence el diez', '2026-09-10'],
+    ]);
+  });
+
+  it('al guardar un gasto fijo actualiza meses futuros existentes sin reescribir meses pasados', () => {
+    const database = createDemoDatabase();
+    database.months['2026-09'] = { year: 2026, month: 9, transactions: [], limits: [], events: [], createdAt: '' };
+    const historicalAugust = database.months['2026-08'];
+    const expense = { id: 'september-service', name: 'Servicio septiembre', amount: 3000, currency: 'ARS' as const, categoryId: 'housing', startDate: '2026-09-01', dueDay: 10, duration: { type: 'unlimited' as const }, reminderEnabled: true, active: true };
+
+    const result = saveFixedExpenseSchedule(database, expense, '2026-08');
+
+    expect(result.months['2026-08']).toEqual(historicalAugust);
+    expect(result.months['2026-09'].transactions).toContainEqual(expect.objectContaining({ recurrenceId: expense.id, date: '2026-09-10' }));
   });
 });
