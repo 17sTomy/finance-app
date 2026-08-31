@@ -7,8 +7,10 @@ interface AuthContextValue {
   user: User | null;
   isLoading: boolean;
   configurationError: string | null;
+  nickname: string;
   signIn: (email: string, password: string) => Promise<void>;
-  signUp: (email: string, password: string) => Promise<boolean>;
+  signUp: (email: string, password: string, nickname: string) => Promise<boolean>;
+  updateNickname: (nickname: string) => Promise<void>;
   signOut: () => Promise<void>;
 }
 
@@ -41,15 +43,24 @@ export function AuthProvider({ children }: { children: ReactNode }) {
     if (error) throw new Error(error.message);
   }, []);
 
-  const signUp = useCallback(async (email: string, password: string) => {
+  const signUp = useCallback(async (email: string, password: string, nickname: string) => {
     if (!supabase) throw new Error('Supabase no está configurado.');
     const { data, error } = await supabase.auth.signUp({
       email,
       password,
-      options: { emailRedirectTo: `${window.location.origin}${import.meta.env.BASE_URL}` },
+      options: { emailRedirectTo: `${window.location.origin}${import.meta.env.BASE_URL}`, data: { nickname: nickname.trim() } },
     });
     if (error) throw new Error(error.message);
     return data.session === null;
+  }, []);
+
+  const updateNickname = useCallback(async (nickname: string) => {
+    if (!supabase) throw new Error('Supabase no está configurado.');
+    const value = nickname.trim();
+    if (!value) throw new Error('Ingresá un apodo.');
+    const { data, error } = await supabase.auth.updateUser({ data: { nickname: value } });
+    if (error) throw new Error(error.message);
+    setSession((current) => current ? { ...current, user: data.user } : current);
   }, []);
 
   const signOut = useCallback(async () => {
@@ -58,15 +69,21 @@ export function AuthProvider({ children }: { children: ReactNode }) {
     if (error) throw new Error(error.message);
   }, []);
 
+  const metadataNickname = session?.user.user_metadata?.nickname;
+  const nickname = typeof metadataNickname === 'string' && metadataNickname.trim()
+    ? metadataNickname.trim()
+    : session?.user.email?.split('@')[0] ?? 'Titu';
   const value = useMemo<AuthContextValue>(() => ({
     session,
     user: session?.user ?? null,
     isLoading,
+    nickname,
     configurationError: isSupabaseConfigured ? null : 'Faltan VITE_SUPABASE_URL y VITE_SUPABASE_PUBLISHABLE_KEY.',
     signIn,
     signUp,
+    updateNickname,
     signOut,
-  }), [session, isLoading, signIn, signUp, signOut]);
+  }), [session, isLoading, nickname, signIn, signUp, updateNickname, signOut]);
 
   return <AuthContext.Provider value={value}>{children}</AuthContext.Provider>;
 }

@@ -8,6 +8,7 @@ export function AuthPage() {
   const navigate = useNavigate();
   const location = useLocation();
   const [mode, setMode] = useState<'login' | 'register'>('login');
+  const [nickname, setNickname] = useState('');
   const [email, setEmail] = useState('');
   const [password, setPassword] = useState('');
   const [busy, setBusy] = useState(false);
@@ -17,6 +18,7 @@ export function AuthPage() {
 
   const submit = async (event: FormEvent) => {
     event.preventDefault();
+    if (mode === 'register' && !nickname.trim()) return setMessage({ type: 'error', text: 'Ingresá el apodo que querés usar en la app.' });
     if (!email.trim() || password.length < 6) return setMessage({ type: 'error', text: 'Ingresá un email válido y una contraseña de al menos 6 caracteres.' });
     setBusy(true); setMessage(null);
     try {
@@ -25,7 +27,7 @@ export function AuthPage() {
         const from = (location.state as { from?: string } | null)?.from ?? '/';
         navigate(from, { replace: true });
       } else {
-        const needsConfirmation = await signUp(email.trim(), password);
+        const needsConfirmation = await signUp(email.trim(), password, nickname.trim());
         if (needsConfirmation) setMessage({ type: 'success', text: 'Cuenta creada. Revisá tu email para confirmarla antes de ingresar.' });
         else navigate('/', { replace: true });
       }
@@ -40,7 +42,8 @@ export function AuthPage() {
     {configurationError && <div className="auth-message auth-message--error"><strong>Supabase no está configurado</strong><span>{configurationError} Copiá `.env.example` como `.env.local` y completá ambas variables.</span></div>}
     {message && <div className={`auth-message auth-message--${message.type}`}>{message.text}</div>}
     <form onSubmit={submit} className="auth-form">
-      <label>Email<input type="email" autoComplete="email" value={email} onChange={(event) => setEmail(event.target.value)} placeholder="vos@ejemplo.com" autoFocus /></label>
+      {mode === 'register' && <label>Apodo<input type="text" autoComplete="nickname" maxLength={30} value={nickname} onChange={(event) => setNickname(event.target.value)} placeholder="Ej. Tomi" autoFocus /></label>}
+      <label>Email<input type="email" autoComplete="email" value={email} onChange={(event) => setEmail(event.target.value)} placeholder="vos@ejemplo.com" autoFocus={mode === 'login'} /></label>
       <label>Contraseña<input type="password" autoComplete={mode === 'login' ? 'current-password' : 'new-password'} value={password} onChange={(event) => setPassword(event.target.value)} /></label>
       <button className="button button--primary button--full" disabled={busy || !!configurationError}>{busy ? 'Procesando…' : mode === 'login' ? 'Ingresar' : 'Registrarme'}</button>
     </form>

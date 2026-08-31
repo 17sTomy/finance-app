@@ -1,4 +1,4 @@
-# Titu's Finance
+# Finance's App
 
 Aplicación responsive de finanzas personales desarrollada con React, TypeScript, Vite y Supabase. El frontend se conecta directamente mediante `@supabase/supabase-js`; Supabase Auth identifica al usuario y PostgreSQL aplica Row Level Security (RLS) en cada tabla privada.
 
@@ -81,10 +81,11 @@ El QA integral crea dos usuarios temporales y comprueba Auth, CRUD, recarga, sin
 ```powershell
 $env:QA_SUPABASE_URL='http://127.0.0.1:54321'
 $env:QA_SUPABASE_ANON_KEY='TU_CLAVE_PUBLICA_LOCAL'
+$env:QA_SUPABASE_SERVICE_ROLE_KEY='TU_SERVICE_ROLE_LOCAL'
 npm run test:e2e
 ```
 
-La URL y la clave pública local aparecen al ejecutar `npx supabase status`.
+La URL y ambas claves locales aparecen al ejecutar `npx supabase status`. La service-role se usa únicamente para crear y eliminar usuarios temporales contra `localhost`; nunca se incorpora al frontend.
 
 El workflow de CI levanta esa misma stack local con Docker, aplica las migraciones desde cero, instala Chromium y ejecuta el E2E antes de habilitar el deploy. El runner rechaza cualquier `QA_SUPABASE_URL` cuyo host no sea `127.0.0.1`, `localhost` o `::1`, por lo que este flujo no puede apuntar a producción. Para reproducirlo localmente hacen falta Docker, la CLI incluida en las dependencias del proyecto y Chromium administrado por Playwright (`npx playwright-core install chromium`).
 

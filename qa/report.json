@@ -1,16 +1,24 @@
 {
-  "passed": 12,
+  "passed": 14,
   "checks": [
     {
       "name": "ruta privada protegida",
       "ok": true
     },
     {
-      "name": "registro, sesión y carga autenticada",
+      "name": "registro con apodo, sesión y carga autenticada",
       "ok": true
     },
     {
       "name": "dashboard, próximos pagos, movimientos y navegación de límites",
+      "ok": true
+    },
+    {
+      "name": "jerarquía de categorías, acordeón y desglose del límite",
+      "ok": true
+    },
+    {
+      "name": "límites heredados y progreso histórico de objetivos",
       "ok": true
     },
     {

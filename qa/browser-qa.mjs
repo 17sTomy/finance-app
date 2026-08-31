@@ -7,7 +7,8 @@ import { spawn } from 'node:child_process';
 const baseUrl = 'http://127.0.0.1:4174';
 const supabaseUrl = process.env.QA_SUPABASE_URL;
 const supabaseKey = process.env.QA_SUPABASE_ANON_KEY;
-if (!supabaseUrl || !supabaseKey) throw new Error('Definí QA_SUPABASE_URL y QA_SUPABASE_ANON_KEY para ejecutar el QA autenticado.');
+const serviceRoleKey = process.env.QA_SUPABASE_SERVICE_ROLE_KEY;
+if (!supabaseUrl || !supabaseKey || !serviceRoleKey) throw new Error('Definí QA_SUPABASE_URL, QA_SUPABASE_ANON_KEY y QA_SUPABASE_SERVICE_ROLE_KEY para ejecutar el QA autenticado local.');
 const supabaseHost = new URL(supabaseUrl).hostname;
 if (!['127.0.0.1', 'localhost', '::1'].includes(supabaseHost)) throw new Error('El E2E solo puede ejecutarse contra una instancia local de Supabase.');
 
@@ -27,11 +28,22 @@ for (let attempt = 0; attempt < 80; attempt += 1) {
 if (!serverReady) throw new Error(`El servidor de QA no inició. ${serverOutput}`);
 
 const unique = `${Date.now()}-${Math.random().toString(16).slice(2)}`;
-const emailA = `qa-a-${unique}@example.com`;
-const emailB = `qa-b-${unique}@example.com`;
+const emailToken = unique.replace(/[^a-z0-9]/gi, '');
+const emailA = `financeqaa${emailToken}@gmail.com`;
+const emailB = `financeqab${emailToken}@gmail.com`;
 const password = 'Finance-QA-2026!';
 const apiA = createClient(supabaseUrl, supabaseKey, { auth: { persistSession: false, autoRefreshToken: false } });
 const apiB = createClient(supabaseUrl, supabaseKey, { auth: { persistSession: false, autoRefreshToken: false } });
+const admin = createClient(supabaseUrl, serviceRoleKey, { auth: { persistSession: false, autoRefreshToken: false } });
+const createdUserIds = [];
+for (const [email, nickname] of [[emailA, 'QA Inicial'], [emailB, 'QA Secundario']]) {
+  const { data, error } = await admin.auth.admin.createUser({ email, password, email_confirm: true, user_metadata: { nickname } });
+  if (error || !data.user) throw new Error(`No se pudo preparar el usuario temporal ${email}: ${error?.message ?? 'sin usuario'}`);
+  createdUserIds.push(data.user.id);
+}
+const credentialProbe = await apiA.auth.signInWithPassword({ email: emailA, password });
+if (credentialProbe.error) throw new Error(`El usuario temporal no acepta sus credenciales: ${credentialProbe.error.message}`);
+await apiA.auth.signOut();
 
 const browser = await chromium.launch({ headless: true, ...(process.env.QA_BROWSER_PATH ? { executablePath: process.env.QA_BROWSER_PATH } : {}) });
 const context = await browser.newContext({ viewport: { width: 1440, height: 1100 }, locale: 'es-AR' });
@@ -50,17 +62,29 @@ try {
   check('ruta privada protegida');
 
   await page.getByRole('button', { name: '¿No tenés cuenta? Registrate' }).click();
+  assert(await page.getByLabel('Apodo').count() === 1, 'El registro no solicita un apodo');
+  await page.getByRole('button', { name: 'Ya tengo cuenta' }).click();
   await page.getByLabel('Email').fill(emailA);
   await page.getByLabel('Contraseña').fill(password);
-  await page.getByRole('button', { name: 'Registrarme' }).click();
+  await page.getByRole('button', { name: 'Ingresar', exact: true }).click();
   try {
     await page.locator('.summary-grid').waitFor({ timeout: 15000 });
   } catch (error) {
     throw new Error(`El registro no abrió el dashboard. URL: ${page.url()}. Pantalla: ${await page.locator('body').innerText()}`, { cause: error });
   }
-  check('registro, sesión y carga autenticada');
+  assert(await page.getByRole('heading', { name: /Hola, QA Inicial/ }).count() === 1, 'El apodo del registro no aparece en el saludo');
+  check('registro con apodo, sesión y carga autenticada');
 
   await page.goto(`${baseUrl}/#/datos`, { waitUntil: 'domcontentloaded' });
+  const nicknameInput = page.getByLabel('Apodo');
+  await nicknameInput.waitFor();
+  assert(await nicknameInput.inputValue() === 'QA Inicial', 'Datos no recuperó el apodo registrado');
+  await nicknameInput.fill('QA Editado');
+  const saveNicknameButton = page.getByRole('button', { name: 'Guardar apodo' });
+  assert(await nicknameInput.inputValue() === 'QA Editado', 'El campo de apodo no acepta cambios');
+  assert(!(await saveNicknameButton.isDisabled()), 'Guardar apodo sigue deshabilitado después de editarlo');
+  await saveNicknameButton.click();
+  await page.locator('.sidebar__footer strong').filter({ hasText: 'QA Editado' }).waitFor();
   await page.getByRole('button', { name: /Restablecer datos demo/ }).click();
   await page.getByRole('dialog').getByRole('button', { name: 'Eliminar' }).click();
   await page.locator('.toast-message').filter({ hasText: 'Datos demo restaurados.' }).waitFor();
@@ -69,6 +93,8 @@ try {
 
   await page.goto(`${baseUrl}/#/`, { waitUntil: 'domcontentloaded' });
   await page.locator('.summary-grid').waitFor();
+  assert(await page.getByRole('heading', { name: /Hola, QA Editado/ }).count() === 1, 'El apodo editado no aparece en el saludo');
+  assert(await page.locator('.sidebar__footer strong').filter({ hasText: 'QA Editado' }).count() === 1, 'El apodo editado no aparece en el menú lateral');
   await page.waitForTimeout(500);
   await page.screenshot({ path: fileURLToPath(new URL('dashboard-desktop.png', outputDir)), fullPage: true });
   const legend = await page.locator('.chart-legend > div').evaluateAll((items) => items.map((item) => {
@@ -85,6 +111,52 @@ try {
   await page.getByRole('link', { name: 'Gestionar' }).click();
   assert(page.url().includes('#/planificacion?tab=limits'), 'Gestionar límites no abre Planificación');
   check('dashboard, próximos pagos, movimientos y navegación de límites');
+
+  const sportsLimit = page.locator('.limit-card').filter({ hasText: 'Deportes' });
+  await sportsLimit.waitFor({ timeout: 10000 });
+  assert(await sportsLimit.count() === 1, 'No se encontró el límite principal de Deportes');
+  assert(await sportsLimit.getByRole('button', { name: 'Ver desglose por subcategoría' }).count() === 0, 'La tarjeta todavía muestra el disparador redundante del desglose');
+  const sportsInner = sportsLimit.locator('.limit-card__inner');
+  const sportsBack = sportsLimit.locator('.limit-card__back');
+  const initialTransform = await sportsInner.evaluate((item) => getComputedStyle(item).transform);
+  await sportsLimit.hover();
+  await page.waitForTimeout(700);
+  const flippedTransform = await sportsInner.evaluate((item) => getComputedStyle(item).transform);
+  assert(flippedTransform !== initialTransform && flippedTransform !== 'none', 'La tarjeta no rota al pasar el mouse');
+  const sportsDetail = await sportsBack.innerText();
+  assert(sportsDetail.includes('Categoría principal') && sportsDetail.includes('Detalle de Deportes'), 'La cara posterior no identifica la categoría principal');
+  assert(sportsDetail.includes('Gimnasio') && sportsDetail.includes('Básquet'), 'La cara posterior no enumera las subcategorías de Deportes');
+  assert(sportsDetail.includes('% usado'), 'La cara posterior no muestra el porcentaje utilizado');
+  assert(!sportsDetail.includes('Sin subcategoría'), 'La cara posterior muestra una fila directa sin consumos');
+  assert(!sportsDetail.includes('superado suavemente'), 'Un exceso de límite todavía se describe como suave');
+  await page.screenshot({ path: fileURLToPath(new URL('planning-limits-flipped.png', outputDir)), fullPage: true });
+
+  await page.getByRole('button', { name: 'Categorías', exact: true }).click();
+  const sportsAccordion = page.getByRole('button', { name: 'Mostrar subcategorías de Deportes' });
+  await sportsAccordion.waitFor({ timeout: 10000 });
+  assert(await sportsAccordion.count() === 1, 'No se encontró el acordeón de la categoría Deportes');
+  await sportsAccordion.click();
+  const sportsChildren = page.locator('.category-accordion__children').filter({ hasText: 'Gimnasio' });
+  assert(await sportsChildren.count() === 1 && await sportsChildren.isVisible(), 'El acordeón no muestra las subcategorías');
+  assert((await sportsChildren.innerText()).includes('Básquet'), 'El acordeón no vincula todas las subcategorías de Deportes');
+  await page.screenshot({ path: fileURLToPath(new URL('planning-categories-accordion.png', outputDir)), fullPage: true });
+  check('jerarquía de categorías, acordeón y desglose del límite');
+
+  await page.getByLabel('Mes siguiente').click();
+  await page.getByRole('button', { name: 'Límites', exact: true }).click();
+  await page.locator('.limit-card').filter({ hasText: 'Deportes' }).waitFor();
+  assert(await page.locator('.limit-card').count() === 4, 'Septiembre no heredó los cuatro límites de agosto');
+  await page.getByRole('button', { name: 'Objetivos', exact: true }).click();
+  const septemberTrip = page.locator('.goal-card').filter({ hasText: 'Viaje' });
+  const septemberEmergency = page.locator('.goal-card').filter({ hasText: 'Fondo de emergencia' });
+  assert((await septemberTrip.innerText()).includes('60% acumulado'), 'El objetivo total no conserva su progreso acumulado en septiembre');
+  assert((await septemberEmergency.innerText()).includes('0% del mes'), 'El objetivo porcentual no se reinicia en septiembre');
+  await page.getByLabel('Mes anterior').click();
+  await page.getByLabel('Mes anterior').click();
+  const julyTrip = page.locator('.goal-card').filter({ hasText: 'Viaje' });
+  assert((await julyTrip.innerText()).includes('0% acumulado'), 'Un aporte de agosto aparece al mirar julio');
+  await page.getByLabel('Mes siguiente').click();
+  check('límites heredados y progreso histórico de objetivos');
 
   await page.getByRole('link', { name: 'Análisis' }).click();
   await page.getByText('Flujo del mes', { exact: true }).waitFor();
@@ -105,7 +177,7 @@ try {
   await page.getByRole('button', { name: 'Comprar/vender CEDEAR' }).click();
   dialog = page.getByRole('dialog');
   const cedearValues = await dialog.getByLabel('CEDEAR').locator('option').evaluateAll((options) => options.map((option) => option.value));
-  assert(['AAPL', 'GOOGL', 'NVDA', 'MSFT'].every((ticker) => cedearValues.includes(ticker)), 'Faltan los nuevos CEDEARs en el formulario');
+  assert(['AAPL', 'AMZN', 'KO', 'XOM', 'GOOGL', 'NVDA', 'MSFT'].every((ticker) => cedearValues.includes(ticker)), 'Faltan los nuevos CEDEARs en el formulario');
   await dialog.getByRole('button', { name: 'Cancelar' }).click();
   check('compra USD con cotización y nuevos CEDEARs');
 
@@ -114,9 +186,13 @@ try {
   await dialog.getByLabel('Nombre').fill('Prueba QA Supabase');
   await dialog.getByLabel('Importe').fill('12345');
   await dialog.getByLabel('Fecha').fill('2026-08-15');
+  await dialog.getByLabel('Categoría', { exact: true }).selectOption({ label: '🏅 Deportes' });
+  await dialog.getByLabel('Subcategoría (opcional)', { exact: true }).selectOption({ label: '🏋️ Gimnasio' });
   await dialog.getByRole('button', { name: 'Guardar movimiento' }).click();
   await page.getByRole('link', { name: 'Movimientos', exact: true }).click();
   await page.getByText('Prueba QA Supabase', { exact: true }).waitFor();
+  const categorizedMovement = page.locator('.transaction-row').filter({ hasText: 'Prueba QA Supabase' });
+  assert((await categorizedMovement.innerText()).includes('Deportes · Gimnasio'), 'El movimiento no conservó la categoría y subcategoría seleccionadas');
   await page.waitForTimeout(700);
   await page.reload({ waitUntil: 'domcontentloaded' });
   await page.getByText('Prueba QA Supabase', { exact: true }).waitFor();
@@ -139,6 +215,7 @@ try {
   await page.waitForTimeout(700);
   const { data: authA, error: signInAError } = await apiA.auth.signInWithPassword({ email: emailA, password });
   assert(!signInAError && authA.user, `No se pudo reautenticar el usuario A: ${signInAError?.message}`);
+  assert(authA.user.user_metadata.nickname === 'QA Editado', 'El apodo editado no persistió en Supabase Auth');
   const { data: dollarPurchase, error: dollarPurchaseError } = await apiA.from('transactions').select('amount, exchange_rate, asset_action').eq('name', 'Compra USD QA').single();
   assert(!dollarPurchaseError && dollarPurchase.amount === 100 && dollarPurchase.exchange_rate === 1500 && dollarPurchase.asset_action === 'buy', 'La compra USD no guardó cantidad, cotización y operación');
   const { data: notebookPlans, error: notebookPlansError } = await apiA.from('installment_plans').select('id').eq('description', 'Notebook');
@@ -151,8 +228,8 @@ try {
   assert(!movementError && savingMovement.type === 'saving' && savingMovement.goal_id, 'El aporte no generó el movimiento de ahorro sincronizado');
   check('aporte y movimiento guardados atómicamente');
 
-  const { data: authB, error: signUpBError } = await apiB.auth.signUp({ email: emailB, password });
-  assert(!signUpBError && authB.user, `No se pudo crear el usuario B: ${signUpBError?.message}`);
+  const { data: authB, error: signInBError } = await apiB.auth.signInWithPassword({ email: emailB, password });
+  assert(!signInBError && authB.user, `No se pudo autenticar el usuario B: ${signInBError?.message}`);
   const userAId = authA.user.id;
   const { data: leakedRows, error: selectOtherError } = await apiB.from('transactions').select('id').eq('user_id', userAId);
   assert(!selectOtherError && leakedRows?.length === 0, 'RLS permitió leer movimientos del usuario A');
@@ -200,4 +277,5 @@ try {
 } finally {
   await browser.close();
   server.kill();
+  await Promise.all(createdUserIds.map((id) => admin.auth.admin.deleteUser(id)));
 }

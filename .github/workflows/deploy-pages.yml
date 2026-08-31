@@ -73,7 +73,7 @@ jobs:
       - name: Start local Supabase
         run: |
           npx supabase start
-          npx supabase status -o env | grep -E '^(API_URL|ANON_KEY)=' >> "$GITHUB_ENV"
+          npx supabase status -o env | grep -E '^(API_URL|ANON_KEY|SERVICE_ROLE_KEY)=' >> "$GITHUB_ENV"
 
       - name: Build against local Supabase
         run: npm run build
@@ -86,6 +86,7 @@ jobs:
         env:
           QA_SUPABASE_URL: ${{ env.API_URL }}
           QA_SUPABASE_ANON_KEY: ${{ env.ANON_KEY }}
+          QA_SUPABASE_SERVICE_ROLE_KEY: ${{ env.SERVICE_ROLE_KEY }}
 
   deploy:
     environment:

@@ -1,4 +1,5 @@
 import type { Category, Currency, FinanceDatabase, MonthlyFinanceData, MonthlyLimit, SavingsGoal, Transaction, TransactionType } from './models';
+import { categoryChildren, categoryFamilyIds, categoryRoot } from './categories';
 
 export interface FinanceSummary {
   income: number;
@@ -66,7 +67,11 @@ export function expensesByCategory(
     .filter((item) => included.includes(item.type) && (!isAsset(item) || item.assetAction !== 'sell'))
     .map((item) => ({ item, amount: transactionAmountInCurrency(item, currency) }))
     .filter(({ amount }) => amount > 0)
-    .forEach(({ item, amount }) => sums.set(item.categoryId ?? 'other', (sums.get(item.categoryId ?? 'other') ?? 0) + amount));
+    .forEach(({ item, amount }) => {
+      const category = categories.find((entry) => entry.id === item.categoryId);
+      const categoryId = category ? categoryRoot(category, categories).id : 'other';
+      sums.set(categoryId, (sums.get(categoryId) ?? 0) + amount);
+    });
   return [...sums.entries()]
     .map(([id, value]) => {
       const category = categories.find((item) => item.id === id);
@@ -75,20 +80,32 @@ export function expensesByCategory(
     .sort((a, b) => b.value - a.value);
 }
 
-export const limitProgress = (limit: MonthlyLimit, month: MonthlyFinanceData) => {
+export const limitProgress = (limit: MonthlyLimit, month: MonthlyFinanceData, categories: Category[] = []) => {
   const salary = monthlySalary(month, limit.currency);
   const configuredPercentage = limit.percentage ?? (salary > 0 && limit.amount ? limit.amount / salary * 100 : 0);
   const limitAmount = salary > 0 && configuredPercentage > 0 ? salary * configuredPercentage / 100 : limit.amount ?? 0;
+  const includedCategoryIds = categoryFamilyIds(limit.categoryId, categories);
   const spent = month.transactions
-    .filter((item) => item.type === 'expense' && item.categoryId === limit.categoryId && item.currency === limit.currency)
+    .filter((item) => item.type === 'expense' && !!item.categoryId && includedCategoryIds.has(item.categoryId) && item.currency === limit.currency)
     .reduce(sumAmount, 0);
   return { spent, limitAmount, configuredPercentage, percentage: limitAmount > 0 ? (spent / limitAmount) * 100 : 0 };
+};
+
+export const limitCategoryBreakdown = (limit: MonthlyLimit, month: MonthlyFinanceData, categories: Category[]) => {
+  const root = categories.find((item) => item.id === limit.categoryId);
+  if (!root) return [];
+  return [root, ...categoryChildren(root.id, categories)].map((category) => ({
+    category,
+    spent: month.transactions
+      .filter((item) => item.type === 'expense' && item.categoryId === category.id && item.currency === limit.currency)
+      .reduce(sumAmount, 0),
+  }));
 };
 
 export const goalTotal = (contributions: { amount: number }[]) => contributions.reduce((sum, item) => sum + item.amount, 0);
 export const goalSavedAmount = (goal: SavingsGoal, selectedMonth: string) => goalTotal(goal.targetMode === 'salaryPercentage'
   ? goal.contributions.filter((item) => item.date.startsWith(selectedMonth))
-  : goal.contributions);
+  : goal.contributions.filter((item) => item.date.slice(0, 7) <= selectedMonth));
 
 export const monthlySalary = (month: MonthlyFinanceData, currency: Currency = 'ARS') => month.transactions
   .filter((item) => item.type === 'income' && !!item.recurrenceId && item.currency === currency)

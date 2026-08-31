@@ -29,6 +29,7 @@ vi.mock('../../infrastructure/persistence/SupabaseFinanceRepository', () => ({
 vi.mock('./AuthProvider', () => ({
   useAuth: () => ({
     user: authenticatedUser,
+    nickname: 'Test',
     signOut: vi.fn(),
   }),
 }));

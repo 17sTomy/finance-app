@@ -1,4 +1,4 @@
-import { calculateSummary, dollarSavingsBalance, expensesByCategory, investmentHoldings, limitProgress } from './financeSelectors';
+import { calculateSummary, dollarSavingsBalance, expensesByCategory, goalSavedAmount, investmentHoldings, limitCategoryBreakdown, limitProgress } from './financeSelectors';
 import type { Category, MonthlyFinanceData, Transaction } from './models';
 
 const transactions: Transaction[] = [
@@ -54,5 +54,47 @@ describe('selectores financieros', () => {
   it('calcula el progreso de un límite mensual', () => {
     const month: MonthlyFinanceData = { year: 2026, month: 8, transactions, limits: [], events: [], createdAt: '' };
     expect(limitProgress({ id: 'limit', categoryId: 'food', percentage: 8, currency: 'ARS' }, month)).toEqual({ spent: 100, limitAmount: 80, configuredPercentage: 8, percentage: 125 });
+  });
+
+  it('suma las subcategorías dentro del límite y del total de la categoría principal', () => {
+    const categories: Category[] = [
+      { id: 'sports', name: 'Deportes', icon: '🏅', color: '#111111', kind: 'expense' },
+      { id: 'gym', name: 'Gimnasio', icon: '🏋️', color: '#222222', kind: 'expense', parentId: 'sports' },
+      { id: 'basketball', name: 'Básquet', icon: '🏀', color: '#333333', kind: 'expense', parentId: 'sports' },
+    ];
+    const month: MonthlyFinanceData = {
+      year: 2026,
+      month: 8,
+      limits: [],
+      events: [],
+      createdAt: '',
+      transactions: [
+        { id: 'gym-payment', name: 'Gimnasio', amount: 50, currency: 'ARS', date: '2026-08-05', type: 'expense', categoryId: 'gym' },
+        { id: 'basketball-payment', name: 'Básquet', amount: 50, currency: 'ARS', date: '2026-08-06', type: 'expense', categoryId: 'basketball' },
+        { id: 'salary', name: 'Sueldo', amount: 1000, currency: 'ARS', date: '2026-08-01', type: 'income', recurrenceId: 'salary' },
+      ],
+    };
+
+    expect(limitProgress({ id: 'sports-limit', categoryId: 'sports', percentage: 10, currency: 'ARS' }, month, categories).spent).toBe(100);
+    expect(limitCategoryBreakdown({ id: 'sports-limit', categoryId: 'sports', percentage: 10, currency: 'ARS' }, month, categories).map(({ category, spent }) => ({ id: category.id, spent }))).toEqual([
+      { id: 'sports', spent: 0 },
+      { id: 'gym', spent: 50 },
+      { id: 'basketball', spent: 50 },
+    ]);
+    expect(expensesByCategory(month.transactions, categories)).toEqual([{ id: 'sports', name: 'Deportes', color: '#111111', value: 100 }]);
+  });
+
+  it('calcula objetivos totales hasta el mes elegido y objetivos porcentuales sólo para ese mes', () => {
+    const contributions = [
+      { id: 'july', amount: 100, date: '2026-07-15' },
+      { id: 'august', amount: 200, date: '2026-08-15' },
+      { id: 'september', amount: 300, date: '2026-09-15' },
+    ];
+    const totalGoal = { id: 'trip', name: 'Viaje', targetAmount: 1000, currency: 'ARS' as const, color: '#123456', contributions };
+    const monthlyGoal = { ...totalGoal, id: 'reserve', targetMode: 'salaryPercentage' as const, salaryPercentage: 10 };
+
+    expect(goalSavedAmount(totalGoal, '2026-07')).toBe(100);
+    expect(goalSavedAmount(totalGoal, '2026-08')).toBe(300);
+    expect(goalSavedAmount(monthlyGoal, '2026-08')).toBe(200);
   });
 });

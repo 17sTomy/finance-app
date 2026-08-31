@@ -10,6 +10,7 @@ export interface Category {
   icon: string;
   color: string;
   kind: CategoryKind;
+  parentId?: string;
 }
 
 export interface Transaction {
@@ -97,6 +98,7 @@ export interface SavingsGoal {
   targetDate?: string;
   contributions: GoalContribution[];
   color: string;
+  categoryId?: string;
 }
 
 export interface CalendarEvent {

@@ -5,7 +5,7 @@ import { normalizeFinanceDatabaseIds } from '../../infrastructure/persistence/fi
 import type { CalendarEvent, Category, FinanceDatabase, FixedExpense, InstallmentPlan, MonthlyLimit, RecurringIncome, SavingsGoal, Transaction } from '../../modules/finance/domain/models';
 import { newId } from '../../modules/finance/domain/models';
 import { generateInstallments, projectFixedExpense, projectSalary, synchronizeSalaryDates } from '../../modules/finance/domain/projections';
-import { addGoalContribution, deleteTransactionCascade, storeTransactionByDate } from '../../modules/finance/domain/financeOperations';
+import { addGoalContribution, copyPreviousMonthLimits, deleteTransactionCascade, storeTransactionByDate } from '../../modules/finance/domain/financeOperations';
 import { createDemoDatabase, createMonth } from '../../modules/finance/infrastructure/demoData';
 import { getCachedHolidayDates, loadArgentinaHolidayDates } from '../../modules/finance/infrastructure/argentinaHolidays';
 import { useAuth } from './AuthProvider';
@@ -55,7 +55,7 @@ const emptyDatabase = (): FinanceDatabase => ({ version: 1, months: {}, categori
 
 function synchronizeDueFixedExpensesForMonth(source: FinanceDatabase, key: string, dueBy = todayISO()): FinanceDatabase {
   const [year, month] = key.split('-').map(Number);
-  const snapshot = source.months[key] ?? createMonth(year, month, source, false, dueBy);
+  const snapshot = source.months[key] ?? { ...createMonth(year, month, source, false, dueBy), limits: copyPreviousMonthLimits(source, key) };
   const existingFixedIds = new Set(snapshot.transactions.filter((item) => item.recurrenceId && item.expenseType === 'fixed' && item.date <= dueBy).map((item) => item.recurrenceId));
   const dueFixedTransactions = source.fixedExpenses
     .filter((item) => !existingFixedIds.has(item.id))
@@ -245,17 +245,24 @@ export function FinanceProvider({ children }: { children: ReactNode }) {
       generateInstallments(plan).forEach((transaction) => {
         const key = transaction.date.slice(0, 7);
         const [year, month] = key.split('-').map(Number);
-        const snapshot = months[key] ?? createMonth(year, month, current);
+        const source = { ...current, months };
+        const snapshot = months[key] ?? { ...createMonth(year, month, source), limits: copyPreviousMonthLimits(source, key) };
         months[key] = { ...snapshot, transactions: [...snapshot.transactions.filter((item) => item.id !== transaction.id), transaction] };
       });
       return { ...current, installmentPlans: [...current.installmentPlans, plan], months };
     }),
-    saveCategory: (category) => setDatabase((current) => ({ ...current, categories: current.categories.some((item) => item.id === category.id) ? current.categories.map((item) => item.id === category.id ? category : item) : [...current.categories, category] })),
+    saveCategory: (category) => setDatabase((current) => ({
+      ...current,
+      categories: current.categories.some((item) => item.id === category.id)
+        ? current.categories.map((item) => item.id === category.id ? category : item.parentId === category.id ? { ...item, kind: category.kind } : item)
+        : [...current.categories, category],
+    })),
     deleteCategory: (id) => setDatabase((current) => ({
       ...current,
-      categories: current.categories.filter((item) => item.id !== id),
+      categories: current.categories.filter((item) => item.id !== id).map((item) => item.parentId === id ? { ...item, parentId: undefined } : item),
       fixedExpenses: current.fixedExpenses.map((item) => item.categoryId === id ? { ...item, categoryId: '' } : item),
       installmentPlans: current.installmentPlans.map((item) => item.categoryId === id ? { ...item, categoryId: '' } : item),
+      goals: current.goals.map((item) => item.categoryId === id ? { ...item, categoryId: undefined } : item),
       months: Object.fromEntries(Object.entries(current.months).map(([key, month]) => [key, {
         ...month,
         transactions: month.transactions.map((item) => item.categoryId === id ? { ...item, categoryId: undefined } : item),

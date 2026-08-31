@@ -1,6 +1,6 @@
 import { createDemoDatabase } from '../infrastructure/demoData';
 import { financeDatabaseToPayload, rowsToFinanceDatabase, type FinanceRows } from '../../../infrastructure/persistence/financeMappers';
-import { addGoalContribution, deleteTransactionCascade, storeTransactionByDate } from './financeOperations';
+import { addGoalContribution, copyPreviousMonthLimits, deleteTransactionCascade, storeTransactionByDate } from './financeOperations';
 import { calculateSummary, goalTotal } from './financeSelectors';
 
 function reloadFromPersistence(database: ReturnType<typeof createDemoDatabase>) {
@@ -21,6 +21,26 @@ function reloadFromPersistence(database: ReturnType<typeof createDemoDatabase>) 
 }
 
 describe('operaciones financieras sincronizadas', () => {
+  it('hereda los límites del mes anterior con IDs nuevos al crear un mes', () => {
+    const database = createDemoDatabase();
+    const ids = ['september-outings', 'september-groceries', 'september-transport', 'september-sports'];
+
+    const inherited = copyPreviousMonthLimits(database, '2026-09', () => ids.shift()!);
+
+    expect(inherited).toEqual(database.months['2026-08'].limits.map((limit, index) => ({
+      ...limit,
+      id: ['september-outings', 'september-groceries', 'september-transport', 'september-sports'][index],
+    })));
+    expect(inherited.every((limit) => !database.months['2026-08'].limits.some((previous) => previous.id === limit.id))).toBe(true);
+  });
+
+  it('respeta que el último mes existente haya quedado explícitamente sin límites', () => {
+    const database = createDemoDatabase();
+    database.months['2026-09'] = { year: 2026, month: 9, transactions: [], limits: [], events: [], createdAt: '' };
+
+    expect(copyPreviousMonthLimits(database, '2026-10')).toEqual([]);
+  });
+
   it('registra un aporte en el objetivo y como egreso del mismo mes', () => {
     const database = createDemoDatabase();
     const before = calculateSummary(database.months['2026-08'].transactions).balance;
@@ -28,7 +48,7 @@ describe('operaciones financieras sincronizadas', () => {
     const goal = result.goals.find((item) => item.id === 'trip')!;
     const movement = result.months['2026-08'].transactions.find((item) => item.id === 'goal-contribution-contribution-test');
     expect(goalTotal(goal.contributions)).toBe(610000);
-    expect(movement).toMatchObject({ amount: 10000, type: 'saving', goalId: 'trip', date: '2026-08-18' });
+    expect(movement).toMatchObject({ amount: 10000, type: 'saving', goalId: 'trip', categoryId: 'outings', date: '2026-08-18' });
     expect(calculateSummary(result.months['2026-08'].transactions).balance).toBe(before - 10000);
   });
 

@@ -73,7 +73,7 @@ export function rowsToFinanceDatabase(rows: FinanceRows): FinanceDatabase {
   const months: Record<string, MonthlyFinanceData> = {};
   const ensureMonth = (key: string, createdAt?: string) => months[key] ??= emptyMonth(key, createdAt);
 
-  const categories: Category[] = rows.categories.map((row) => ({ id: row.id, name: row.name, icon: row.icon, color: row.color, kind: asCategoryKind(row.kind) }));
+  const categories: Category[] = rows.categories.map((row) => ({ id: row.id, name: row.name, icon: row.icon, color: row.color, kind: asCategoryKind(row.kind), parentId: row.parent_category_id ?? undefined }));
   const fixedExpenses: FixedExpense[] = rows.fixedExpenses.map((row) => ({
     id: row.id, name: row.name, amount: Number(row.amount), currency: asCurrency(row.currency), categoryId: row.category_id ?? '', startDate: row.start_date,
     dueDay: row.due_day, duration: durationFromRow(row), reminderEnabled: row.reminder_enabled, notes: row.notes ?? undefined, active: row.active,
@@ -94,7 +94,7 @@ export function rowsToFinanceDatabase(rows: FinanceRows): FinanceDatabase {
   const goals: SavingsGoal[] = rows.goals.map((row) => ({
     id: row.id, name: row.name, targetAmount: Number(row.target_amount), targetMode: row.target_mode as SavingsGoal['targetMode'],
     salaryPercentage: row.salary_percentage === null ? undefined : Number(row.salary_percentage), currency: asCurrency(row.currency),
-    targetDate: row.target_date ?? undefined, color: row.color, contributions: contributionsByGoal.get(row.id) ?? [],
+    targetDate: row.target_date ?? undefined, color: row.color, categoryId: row.category_id ?? undefined, contributions: contributionsByGoal.get(row.id) ?? [],
   }));
 
   rows.transactions.forEach((row) => {
@@ -143,13 +143,14 @@ export function normalizeFinanceDatabaseIds(database: FinanceDatabase): FinanceD
 
   return {
     ...database,
-    categories: database.categories.map((item) => ({ ...item, id: categoryIds.get(item.id)! })),
+    categories: database.categories.map((item) => ({ ...item, id: categoryIds.get(item.id)!, parentId: item.parentId ? categoryIds.get(item.parentId) : undefined })),
     fixedExpenses: database.fixedExpenses.map((item) => ({ ...item, id: fixedIds.get(item.id)!, categoryId: categoryIds.get(item.categoryId) ?? '' })),
     recurringIncomes: database.recurringIncomes.map((item) => ({ ...item, id: incomeIds.get(item.id)! })),
     installmentPlans: database.installmentPlans.map((item) => ({ ...item, id: planIds.get(item.id)!, categoryId: categoryIds.get(item.categoryId) ?? '' })),
     goals: database.goals.map((goal) => ({
       ...goal,
       id: goalIds.get(goal.id)!,
+      categoryId: goal.categoryId ? categoryIds.get(goal.categoryId) : undefined,
       contributions: goal.contributions.map((item) => ({
         ...item,
         id: contributionIds.get(`${goal.id}:${item.id}`)!,
@@ -176,7 +177,7 @@ export function financeDatabaseToPayload(input: FinanceDatabase): FinancePersist
   const database = normalizeFinanceDatabaseIds(input);
   const transactions = Object.values(database.months).flatMap((month) => month.transactions);
   return {
-    categories: database.categories.map((item) => ({ id: item.id, name: item.name, icon: item.icon, color: item.color, kind: item.kind })),
+    categories: database.categories.map((item) => ({ id: item.id, name: item.name, icon: item.icon, color: item.color, kind: item.kind, parent_category_id: item.parentId ?? null })),
     fixed_expenses: database.fixedExpenses.map((item) => ({
       id: item.id, name: item.name, amount: item.amount, currency: item.currency, category_id: item.categoryId || null, start_date: item.startDate,
       due_day: item.dueDay, duration_type: item.duration.type, duration_count: item.duration.type === 'months' ? item.duration.count : null,
@@ -189,7 +190,7 @@ export function financeDatabaseToPayload(input: FinanceDatabase): FinancePersist
     })),
     savings_goals: database.goals.map((item) => ({
       id: item.id, name: item.name, target_amount: item.targetAmount, target_mode: item.targetMode ?? 'amount', salary_percentage: item.salaryPercentage ?? null,
-      currency: item.currency, target_date: item.targetDate ?? null, color: item.color,
+      currency: item.currency, target_date: item.targetDate ?? null, color: item.color, category_id: item.categoryId ?? null,
     })),
     transactions: transactions.map((item) => ({
       id: item.id, name: item.name, amount: item.amount, currency: item.currency, transaction_date: item.date, type: item.type,

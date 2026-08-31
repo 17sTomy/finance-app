@@ -7,6 +7,8 @@ import { Card } from '../../../shared/components/Card';
 import { MoneyValue } from '../../../shared/components/MoneyValue';
 import { ConfirmDialog, Modal } from '../../../shared/components/Modal';
 import { dateForSelectedMonth, isValidISODate } from '../../../shared/utils/dates';
+import { categoryRoot } from '../../finance/domain/categories';
+import { EmptyState } from '../../../shared/components/EmptyState';
 
 function durationText(duration: RecurrenceDuration) {
   if (duration.type === 'unlimited') return 'Sin fecha de fin';
@@ -19,7 +21,14 @@ function FixedExpenseForm({ initial, onDone }: { initial?: FixedExpense; onDone:
   const [name, setName] = useState(initial?.name ?? '');
   const [amount, setAmount] = useState(initial?.amount ? String(initial.amount) : '');
   const [currency, setCurrency] = useState<Currency>(initial?.currency ?? 'ARS');
-  const [categoryId, setCategoryId] = useState(initial?.categoryId ?? 'housing');
+  const expenseCategories = database.categories.filter((item) => item.kind === 'expense' || item.kind === 'all');
+  const mainCategories = expenseCategories.filter((item) => !item.parentId);
+  const initialCategory = database.categories.find((item) => item.id === initial?.categoryId);
+  const initialMainCategory = initialCategory ? categoryRoot(initialCategory, database.categories) : undefined;
+  const [categoryId, setCategoryId] = useState(initialMainCategory?.id ?? mainCategories[0]?.id ?? '');
+  const [subcategoryId, setSubcategoryId] = useState(initialCategory?.parentId ? initialCategory.id : '');
+  const subcategories = expenseCategories.filter((item) => item.parentId === categoryId);
+  const selectedCategoryId = subcategoryId || categoryId;
   const [startDate, setStartDate] = useState(initial?.startDate ?? `${selectedMonth}-01`);
   const [dueDay, setDueDay] = useState(String(initial?.dueDay ?? 10));
   const [durationType, setDurationType] = useState<RecurrenceDuration['type']>(initial?.duration.type ?? 'unlimited');
@@ -32,6 +41,7 @@ function FixedExpenseForm({ initial, onDone }: { initial?: FixedExpense; onDone:
     event.preventDefault();
     const numericAmount = Number(amount); const day = Number(dueDay); const months = Number(durationValue);
     if (!name.trim()) return setError('Ingresá un nombre.');
+    if (!selectedCategoryId) return setError('Elegí una categoría. Si todavía no tenés una, creala desde Planificación.');
     if (!Number.isFinite(numericAmount) || numericAmount <= 0) return setError('Ingresá un importe válido.');
     if (!isValidISODate(startDate)) return setError('Elegí una fecha de inicio válida.');
     if (!Number.isInteger(day) || day < 1 || day > 31) return setError('El día de vencimiento debe estar entre 1 y 31.');
@@ -39,14 +49,15 @@ function FixedExpenseForm({ initial, onDone }: { initial?: FixedExpense; onDone:
     if (durationType === 'until' && !isValidISODate(durationValue)) return setError('Elegí una fecha de finalización válida.');
     if (durationType === 'until' && durationValue < startDate) return setError('La fecha final no puede ser anterior a la fecha de inicio.');
     const duration: RecurrenceDuration = durationType === 'months' ? { type: 'months', count: months } : durationType === 'until' ? { type: 'until', endDate: durationValue } : { type: 'unlimited' };
-    saveFixedExpense({ id: initial?.id ?? newId(), name: name.trim(), amount: numericAmount, currency, categoryId, startDate, dueDay: day, duration, reminderEnabled: reminder, notes: notes.trim() || undefined, active: initial?.active ?? true });
+    saveFixedExpense({ id: initial?.id ?? newId(), name: name.trim(), amount: numericAmount, currency, categoryId: selectedCategoryId, startDate, dueDay: day, duration, reminderEnabled: reminder, notes: notes.trim() || undefined, active: initial?.active ?? true });
     onDone();
   };
   return <form className="form-grid" onSubmit={submit}>
     <label className="field--wide">Nombre<input autoFocus value={name} onChange={(event) => setName(event.target.value)} placeholder="Ej. Seguro del auto" /></label>
     <label>Importe<input type="number" inputMode="decimal" min="0.01" step="0.01" value={amount} onChange={(event) => setAmount(event.target.value)} /></label>
     <label>Moneda<select value={currency} onChange={(event) => setCurrency(event.target.value as Currency)}><option value="ARS">ARS — Pesos</option><option value="USD">USD — Dólares</option></select></label>
-    <label>Categoría<select value={categoryId} onChange={(event) => setCategoryId(event.target.value)}>{database.categories.filter((item) => item.kind === 'expense' || item.kind === 'all').map((item) => <option key={item.id} value={item.id}>{item.icon} {item.name}</option>)}</select></label>
+    <label>Categoría<select aria-label="Categoría" value={categoryId} onChange={(event) => { setCategoryId(event.target.value); setSubcategoryId(''); }}><option value="" disabled>Elegí una categoría</option>{mainCategories.map((item) => <option key={item.id} value={item.id}>{item.icon} {item.name}</option>)}</select></label>
+    <label>Subcategoría (opcional)<select aria-label="Subcategoría (opcional)" value={subcategoryId} disabled={!categoryId || subcategories.length === 0} onChange={(event) => setSubcategoryId(event.target.value)}><option value="">{subcategories.length === 0 ? 'Esta categoría no tiene subcategorías' : 'Ninguna — usar categoría principal'}</option>{subcategories.map((item) => <option key={item.id} value={item.id}>{item.icon} {item.name}</option>)}</select></label>
     <label>Día de vencimiento<input type="number" min="1" max="31" value={dueDay} onChange={(event) => setDueDay(event.target.value)} /></label>
     <label>Fecha de inicio<input type="date" value={startDate} onChange={(event) => setStartDate(event.target.value)} /></label>
     <label>Duración<select value={durationType} onChange={(event) => setDurationType(event.target.value as RecurrenceDuration['type'])}><option value="unlimited">Ilimitado</option><option value="months">Cantidad de meses</option><option value="until">Hasta una fecha</option></select></label>
@@ -75,14 +86,14 @@ export function FixedExpensesPage() {
   return <>
     <div className="page-heading"><div><p className="eyebrow">RECURRENCIAS</p><h1>Gastos fijos</h1><p>Organizá tus compromisos sin crear copias sueltas cada mes.</p></div><button className="button button--primary" onClick={() => openEdit()}><Plus size={18} /> Nuevo gasto fijo</button></div>
     <div className="fixed-stats"><Card><small>Total mensual activo</small><MoneyValue value={database.fixedExpenses.filter((item) => item.active && item.currency === 'ARS').reduce((sum, item) => sum + item.amount, 0)} className="summary-money" /></Card><Card><small>Recurrencias activas</small><strong className="summary-number">{database.fixedExpenses.filter((item) => item.active).length}</strong></Card><Card><small>Con recordatorio</small><strong className="summary-number">{database.fixedExpenses.filter((item) => item.reminderEnabled).length}</strong></Card></div>
-    <div className="fixed-grid">{database.fixedExpenses.map((item) => <Card key={item.id} className={`fixed-card ${!item.active ? 'fixed-card--paused' : ''}`}>
+    {database.fixedExpenses.length === 0 ? <Card><EmptyState title="No tenés gastos fijos creados" description="Agregá una recurrencia para verla proyectada automáticamente cada mes." action={<button className="button button--primary" onClick={() => openEdit()}>Crear gasto fijo</button>} /></Card> : <div className="fixed-grid">{database.fixedExpenses.map((item) => <Card key={item.id} className={`fixed-card ${!item.active ? 'fixed-card--paused' : ''}`}>
       <div className="fixed-card__top"><span className="category-icon">{database.categories.find((category) => category.id === item.categoryId)?.icon ?? '•'}</span><span className={`status-pill ${item.active ? 'status-pill--active' : ''}`}>{item.active ? 'Activo' : 'Pausado'}</span></div>
       <h2>{item.name}</h2><MoneyValue value={item.amount} currency={item.currency} className="fixed-amount" />
       <div className="fixed-details"><span><CalendarClock size={16} /> Vence el día {item.dueDay}</span><span>{item.reminderEnabled ? <Bell size={16} /> : <BellOff size={16} />} {item.reminderEnabled ? 'Recordatorio activo' : 'Sin recordatorio'}</span><span>↻ {durationText(item.duration)}</span></div>
       <div className="fixed-actions"><button className="button button--ghost" onClick={() => toggleFixedExpense(item.id)}>{item.active ? <Pause size={16} /> : <Play size={16} />}{item.active ? 'Pausar' : 'Reactivar'}</button><button className="icon-button" aria-label={`Editar ${item.name}`} onClick={() => openEdit(item)}><Pencil size={17} /></button><button className="icon-button" aria-label={`Eliminar ${item.name}`} onClick={() => setDeleting(item)}><Trash2 size={17} /></button></div>
-    </Card>)}</div>
+    </Card>)}</div>}
     <div className="subsection-heading"><div><p className="eyebrow">INGRESOS AUTOMÁTICOS</p><h2>Sueldo recurrente</h2></div><button className="button button--ghost" onClick={() => setSalaryEditing(null)}><Plus size={17} /> Agregar</button></div>
-    <div className="fixed-grid salary-grid">{database.recurringIncomes.map((item) => <Card key={item.id} className={!item.active ? 'fixed-card--paused' : ''}><div className="fixed-card__top"><span className="category-icon"><Wallet size={19} /></span><span className={`status-pill ${item.active ? 'status-pill--active' : ''}`}>{item.active ? 'Activo' : 'Pausado'}</span></div><h2>{item.name}</h2><MoneyValue value={item.amount} currency={item.currency} className="fixed-amount" /><p className="muted small-copy">Se acredita el primer día hábil argentino desde {new Intl.DateTimeFormat('es-AR').format(new Date(`${item.startDate}T12:00:00`))}; incluye feriados nacionales.</p><div className="fixed-actions"><button className="button button--ghost" onClick={() => toggleRecurringIncome(item.id)}>{item.active ? <Pause size={16} /> : <Play size={16} />}{item.active ? 'Pausar' : 'Reactivar'}</button><button className="icon-button" aria-label={`Editar ${item.name}`} onClick={() => setSalaryEditing(item)}><Pencil size={17} /></button></div></Card>)}</div>
+    {database.recurringIncomes.length === 0 ? <Card><EmptyState title="No tenés ingresos recurrentes" description="Agregá tu sueldo u otro ingreso que se repita todos los meses." action={<button className="button button--primary" onClick={() => setSalaryEditing(null)}>Crear ingreso recurrente</button>} /></Card> : <div className="fixed-grid salary-grid">{database.recurringIncomes.map((item) => <Card key={item.id} className={!item.active ? 'fixed-card--paused' : ''}><div className="fixed-card__top"><span className="category-icon"><Wallet size={19} /></span><span className={`status-pill ${item.active ? 'status-pill--active' : ''}`}>{item.active ? 'Activo' : 'Pausado'}</span></div><h2>{item.name}</h2><MoneyValue value={item.amount} currency={item.currency} className="fixed-amount" /><p className="muted small-copy">Se acredita el primer día hábil argentino desde {new Intl.DateTimeFormat('es-AR').format(new Date(`${item.startDate}T12:00:00`))}; incluye feriados nacionales.</p><div className="fixed-actions"><button className="button button--ghost" onClick={() => toggleRecurringIncome(item.id)}>{item.active ? <Pause size={16} /> : <Play size={16} />}{item.active ? 'Pausar' : 'Reactivar'}</button><button className="icon-button" aria-label={`Editar ${item.name}`} onClick={() => setSalaryEditing(item)}><Pencil size={17} /></button></div></Card>)}</div>}
     <Modal open={formOpen} title={editing ? 'Editar gasto fijo' : 'Nuevo gasto fijo'} onClose={() => setFormOpen(false)}><FixedExpenseForm initial={editing} onDone={() => setFormOpen(false)} /></Modal>
     <Modal open={salaryEditing !== undefined} title={salaryEditing ? 'Editar sueldo recurrente' : 'Nuevo sueldo recurrente'} onClose={() => setSalaryEditing(undefined)}><SalaryForm initial={salaryEditing ?? undefined} onDone={() => setSalaryEditing(undefined)} /></Modal>
     <ConfirmDialog open={!!deleting} title="¿Eliminar la recurrencia?" message="Los meses históricos conservarán sus movimientos. La recurrencia dejará de proyectarse en meses nuevos." onClose={() => setDeleting(null)} onConfirm={() => deleting && deleteFixedExpense(deleting.id)} />

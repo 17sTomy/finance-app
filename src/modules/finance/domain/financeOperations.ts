@@ -1,4 +1,15 @@
-import type { FinanceDatabase, MonthlyFinanceData, Transaction } from './models';
+import type { FinanceDatabase, MonthlyFinanceData, MonthlyLimit, Transaction } from './models';
+import { newId } from './models';
+
+export function copyPreviousMonthLimits(
+  database: FinanceDatabase,
+  targetMonth: string,
+  idFactory: () => string = newId,
+): MonthlyLimit[] {
+  const previousKey = Object.keys(database.months).filter((key) => key < targetMonth).sort().at(-1);
+  if (!previousKey) return [];
+  return database.months[previousKey].limits.map((limit) => ({ ...limit, id: idFactory() }));
+}
 
 export function storeTransactionByDate(
   database: FinanceDatabase,
@@ -31,7 +42,7 @@ export function addGoalContribution(
   const goal = database.goals.find((item) => item.id === goalId);
   const month = database.months[selectedMonth];
   if (!goal || !month) return database;
-  const savingsCategoryId = database.categories.find((item) => item.kind === 'saving')?.id;
+  const savingsCategoryId = goal.categoryId ?? database.categories.find((item) => item.kind === 'saving')?.id;
   const transactionId = `goal-contribution-${contributionId}`;
   const transaction: Transaction = {
     id: transactionId,
