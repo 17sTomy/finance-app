@@ -37,7 +37,7 @@ export function AuthPage() {
   };
 
   return <main className="auth-page"><section className="auth-card">
-    <div className="auth-brand"><span className="brand__mark"><Landmark size={24} /></span><div><strong>Titu's</strong><small>Finance</small></div></div>
+    <div className="auth-brand" aria-label="Finance's App"><span className="brand__mark"><Landmark size={24} /></span><div><strong>Finance's</strong><small>App</small></div></div>
     <div><p className="eyebrow">TUS FINANZAS, SEGURAS</p><h1>{mode === 'login' ? 'Ingresar' : 'Crear cuenta'}</h1><p className="muted">Tus datos se guardan en Supabase y solamente tu usuario puede accederlos.</p></div>
     {configurationError && <div className="auth-message auth-message--error"><strong>Supabase no está configurado</strong><span>{configurationError} Copiá `.env.example` como `.env.local` y completá ambas variables.</span></div>}
     {message && <div className={`auth-message auth-message--${message.type}`}>{message.text}</div>}

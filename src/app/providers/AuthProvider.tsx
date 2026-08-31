@@ -72,7 +72,7 @@ export function AuthProvider({ children }: { children: ReactNode }) {
   const metadataNickname = session?.user.user_metadata?.nickname;
   const nickname = typeof metadataNickname === 'string' && metadataNickname.trim()
     ? metadataNickname.trim()
-    : session?.user.email?.split('@')[0] ?? 'Titu';
+    : session?.user.email?.split('@')[0] ?? 'Usuario';
   const value = useMemo<AuthContextValue>(() => ({
     session,
     user: session?.user ?? null,

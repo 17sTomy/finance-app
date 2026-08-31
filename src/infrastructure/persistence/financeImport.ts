@@ -23,5 +23,5 @@ export function parseFinanceImport(raw: string, current: FinanceDatabase): Finan
   if (isDatabase(parsed)) return parsed;
   if (isMonth(parsed)) return { ...current, months: { ...current.months, [`${parsed.year}-${String(parsed.month).padStart(2, '0')}`]: parsed } };
   if (isYearExport(parsed)) return { ...current, months: { ...current.months, ...parsed.months } };
-  throw new Error('El archivo no tiene una estructura válida de Titu\'s Finance.');
+  throw new Error('El archivo no tiene una estructura válida de Finance\'s App.');
 }

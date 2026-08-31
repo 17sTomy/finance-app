@@ -19,12 +19,12 @@ const navigation = [
 export function AppLayout() {
   const { showAmounts, toggleAmounts, isLoading, loadError, saveError, hasSaveConflict, retryLoad, retrySave } = useFinance();
   const { user, nickname, signOut } = useAuth();
-  const displayNickname = nickname?.trim() || user?.email?.split('@')[0] || 'Titu';
+  const displayNickname = nickname?.trim() || user?.email?.split('@')[0] || 'Usuario';
   const [menuOpen, setMenuOpen] = useState(false);
   const [remindersOpen, setRemindersOpen] = useState(false);
   return <div className="app-shell">
     <aside className={`sidebar ${menuOpen ? 'sidebar--open' : ''}`}>
-      <div className="brand"><span className="brand__mark"><Landmark size={22} /></span><div><strong>Titu's</strong><small>Finance</small></div></div>
+      <div className="brand" aria-label="Finance's App"><span className="brand__mark"><Landmark size={22} /></span><div><strong>Finance's</strong><small>App</small></div></div>
       <button className="icon-button sidebar__close" aria-label="Cerrar menú" onClick={() => setMenuOpen(false)}><X /></button>
       <nav>{navigation.map(({ to, label, icon: Icon }) => <NavLink key={to} to={to} end={to === '/'} onClick={() => setMenuOpen(false)}><Icon size={20} /><span>{label}</span></NavLink>)}</nav>
       <div className="sidebar__footer"><div className="avatar">{displayNickname.slice(0, 2).toUpperCase()}</div><div><strong>{displayNickname}</strong><small>{user?.email}</small></div><button className="icon-button" aria-label="Cerrar sesión" onClick={() => void signOut()}><LogOut size={17} /></button></div>

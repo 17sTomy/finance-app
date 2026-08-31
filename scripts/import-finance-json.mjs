@@ -9,7 +9,7 @@ if (!filePath) throw new Error('Uso: node scripts/import-finance-json.mjs <respa
 if (!SUPABASE_URL || !supabaseKey || !SUPABASE_EMAIL || !SUPABASE_PASSWORD) throw new Error('Faltan SUPABASE_URL, SUPABASE_PUBLISHABLE_KEY, SUPABASE_EMAIL o SUPABASE_PASSWORD.');
 
 const database = JSON.parse(await readFile(filePath, 'utf8'));
-if (database?.version !== 1 || !database.months || !Array.isArray(database.categories)) throw new Error('El archivo no es una copia completa válida de Titu\'s Finance.');
+if (database?.version !== 1 || !database.months || !Array.isArray(database.categories)) throw new Error('El archivo no es una copia completa válida de Finance\'s App.');
 
 const client = createClient(SUPABASE_URL, supabaseKey, { auth: { persistSession: false, autoRefreshToken: false } });
 const { data: authData, error: authError } = await client.auth.signInWithPassword({ email: SUPABASE_EMAIL, password: SUPABASE_PASSWORD });
