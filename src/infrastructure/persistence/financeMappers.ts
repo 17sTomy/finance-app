@@ -77,6 +77,7 @@ export function rowsToFinanceDatabase(rows: FinanceRows): FinanceDatabase {
   const fixedExpenses: FixedExpense[] = rows.fixedExpenses.map((row) => ({
     id: row.id, name: row.name, amount: Number(row.amount), currency: asCurrency(row.currency), categoryId: row.category_id ?? '', startDate: row.start_date,
     dueDay: row.due_day, duration: durationFromRow(row), reminderEnabled: row.reminder_enabled, notes: row.notes ?? undefined, active: row.active,
+    history: (row.expense_history ?? []) as unknown as FixedExpense['history'],
   }));
   const recurringIncomes: RecurringIncome[] = rows.recurringIncomes.map((row) => ({
     id: row.id, name: row.name, amount: Number(row.amount), currency: asCurrency(row.currency), startDate: row.start_date, active: row.active,
@@ -145,7 +146,10 @@ export function normalizeFinanceDatabaseIds(database: FinanceDatabase): FinanceD
   return {
     ...database,
     categories: database.categories.map((item) => ({ ...item, id: categoryIds.get(item.id)!, parentId: item.parentId ? categoryIds.get(item.parentId) : undefined })),
-    fixedExpenses: database.fixedExpenses.map((item) => ({ ...item, id: fixedIds.get(item.id)!, categoryId: categoryIds.get(item.categoryId) ?? '' })),
+    fixedExpenses: database.fixedExpenses.map((item) => ({
+      ...item, id: fixedIds.get(item.id)!, categoryId: categoryIds.get(item.categoryId) ?? '',
+      history: item.history?.map((revision) => ({ ...revision, categoryId: categoryIds.get(revision.categoryId) ?? '' })),
+    })),
     recurringIncomes: database.recurringIncomes.map((item) => ({ ...item, id: incomeIds.get(item.id)! })),
     installmentPlans: database.installmentPlans.map((item) => ({ ...item, id: planIds.get(item.id)!, categoryId: categoryIds.get(item.categoryId) ?? '' })),
     goals: database.goals.map((goal) => ({
@@ -182,7 +186,7 @@ export function financeDatabaseToPayload(input: FinanceDatabase): FinancePersist
     fixed_expenses: database.fixedExpenses.map((item) => ({
       id: item.id, name: item.name, amount: item.amount, currency: item.currency, category_id: item.categoryId || null, start_date: item.startDate,
       due_day: item.dueDay, duration_type: item.duration.type, duration_count: item.duration.type === 'months' ? item.duration.count : null,
-      duration_end_date: item.duration.type === 'until' ? item.duration.endDate : null, reminder_enabled: item.reminderEnabled, notes: item.notes ?? null, active: item.active,
+      duration_end_date: item.duration.type === 'until' ? item.duration.endDate : null, reminder_enabled: item.reminderEnabled, notes: item.notes ?? null, active: item.active, expense_history: item.history ?? [],
     })),
     recurring_incomes: database.recurringIncomes.map((item) => ({ id: item.id, name: item.name, amount: item.amount, currency: item.currency, start_date: item.startDate, active: item.active, salary_history: item.history ?? [] })),
     installment_plans: database.installmentPlans.map((item) => ({

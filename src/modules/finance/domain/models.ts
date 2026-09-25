@@ -39,8 +39,7 @@ export type RecurrenceDuration =
   | { type: 'until'; endDate: string }
   | { type: 'unlimited' };
 
-export interface FixedExpense {
-  id: string;
+export interface FixedExpenseTerms {
   name: string;
   amount: number;
   currency: Currency;
@@ -51,6 +50,15 @@ export interface FixedExpense {
   reminderEnabled: boolean;
   notes?: string;
   active: boolean;
+}
+
+export interface FixedExpenseRevision extends FixedExpenseTerms {
+  fromMonth: string;
+}
+
+export interface FixedExpense extends FixedExpenseTerms {
+  id: string;
+  history?: FixedExpenseRevision[];
 }
 
 export interface RecurringIncomeTerms {

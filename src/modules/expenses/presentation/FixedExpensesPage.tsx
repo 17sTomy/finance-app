@@ -8,6 +8,7 @@ import { MoneyValue } from '../../../shared/components/MoneyValue';
 import { ConfirmDialog, Modal } from '../../../shared/components/Modal';
 import { isValidISODate } from '../../../shared/utils/dates';
 import { categoryRoot } from '../../finance/domain/categories';
+import { fixedExpenseForMonth } from '../../finance/domain/fixedExpense';
 import { recurringIncomeForMonth } from '../../finance/domain/recurringIncome';
 import { EmptyState } from '../../../shared/components/EmptyState';
 
@@ -79,15 +80,16 @@ function SalaryForm({ initial, onDone }: { initial?: RecurringIncome; onDone: ()
 
 export function FixedExpensesPage() {
   const { database, selectedMonth, toggleFixedExpense, deleteFixedExpense, toggleRecurringIncome } = useFinance();
+  const fixedExpenses = database.fixedExpenses.map((expense) => fixedExpenseForMonth(expense, selectedMonth));
   const [formOpen, setFormOpen] = useState(false);
   const [editing, setEditing] = useState<FixedExpense | undefined>();
   const [deleting, setDeleting] = useState<FixedExpense | null>(null);
   const [salaryEditing, setSalaryEditing] = useState<RecurringIncome | null | undefined>();
   const openEdit = (item?: FixedExpense) => { setEditing(item); setFormOpen(true); };
   return <>
-    <div className="page-heading"><div><p className="eyebrow">RECURRENCIAS</p><h1>Gastos fijos</h1><p>Organizá tus compromisos sin crear copias sueltas cada mes.</p></div><button className="button button--primary" onClick={() => openEdit()}><Plus size={18} /> Nuevo gasto fijo</button></div>
-    <div className="fixed-stats"><Card><small>Total mensual activo</small><MoneyValue value={database.fixedExpenses.filter((item) => item.active && item.currency === 'ARS').reduce((sum, item) => sum + item.amount, 0)} className="summary-money" /></Card><Card><small>Recurrencias activas</small><strong className="summary-number">{database.fixedExpenses.filter((item) => item.active).length}</strong></Card><Card><small>Con recordatorio</small><strong className="summary-number">{database.fixedExpenses.filter((item) => item.reminderEnabled).length}</strong></Card></div>
-    {database.fixedExpenses.length === 0 ? <Card><EmptyState title="No tenés gastos fijos creados" description="Agregá una recurrencia para verla proyectada automáticamente cada mes." action={<button className="button button--primary" onClick={() => openEdit()}>Crear gasto fijo</button>} /></Card> : <div className="fixed-grid">{database.fixedExpenses.map((item) => <Card key={item.id} className={`fixed-card ${!item.active ? 'fixed-card--paused' : ''}`}>
+    <div className="page-heading"><div><p className="eyebrow">RECURRENCIAS</p><h1>Gastos fijos</h1><p>Condiciones de {selectedMonth}. Los cambios se aplican desde este mes en adelante.</p></div><button className="button button--primary" onClick={() => openEdit()}><Plus size={18} /> Nuevo gasto fijo</button></div>
+    <div className="fixed-stats"><Card><small>Total mensual activo</small><MoneyValue value={fixedExpenses.filter((item) => item.active && item.currency === 'ARS').reduce((sum, item) => sum + item.amount, 0)} className="summary-money" /></Card><Card><small>Recurrencias activas</small><strong className="summary-number">{fixedExpenses.filter((item) => item.active).length}</strong></Card><Card><small>Con recordatorio</small><strong className="summary-number">{fixedExpenses.filter((item) => item.reminderEnabled).length}</strong></Card></div>
+    {fixedExpenses.length === 0 ? <Card><EmptyState title="No tenés gastos fijos creados" description="Agregá una recurrencia para verla proyectada automáticamente cada mes." action={<button className="button button--primary" onClick={() => openEdit()}>Crear gasto fijo</button>} /></Card> : <div className="fixed-grid">{fixedExpenses.map((item) => <Card key={item.id} className={`fixed-card ${!item.active ? 'fixed-card--paused' : ''}`}>
       <div className="fixed-card__top"><span className="category-icon">{database.categories.find((category) => category.id === item.categoryId)?.icon ?? '•'}</span><span className={`status-pill ${item.active ? 'status-pill--active' : ''}`}>{item.active ? 'Activo' : 'Pausado'}</span></div>
       <h2>{item.name}</h2><MoneyValue value={item.amount} currency={item.currency} className="fixed-amount" />
       <div className="fixed-details"><span><CalendarClock size={16} /> Vence el día {item.dueDay}</span><span>{item.reminderEnabled ? <Bell size={16} /> : <BellOff size={16} />} {item.reminderEnabled ? 'Recordatorio activo' : 'Sin recordatorio'}</span><span>↻ {durationText(item.duration)}</span></div>

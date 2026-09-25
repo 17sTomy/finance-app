@@ -80,6 +80,9 @@ jobs:
       - name: Test recurring income history in PostgreSQL
         run: docker exec -i supabase_db_finance-app psql -U postgres -d postgres -v ON_ERROR_STOP=1 < qa/recurring-income-history.sql
 
+      - name: Test fixed expense history in PostgreSQL
+        run: docker exec -i supabase_db_finance-app psql -U postgres -d postgres -v ON_ERROR_STOP=1 < qa/fixed-expense-history.sql
+
       - name: Build against local Supabase
         run: npm run build
         env:

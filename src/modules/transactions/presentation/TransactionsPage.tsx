@@ -15,7 +15,7 @@ const filters: { value: Filter; label: string }[] = [{ value: 'all', label: 'Tod
 
 const iconByType = { income: ArrowUp, expense: ArrowDown, saving: PiggyBank, investment: TrendingUp };
 const isIncoming = (item: Transaction) => item.type === 'income' || ((item.type === 'saving' || item.type === 'investment') && item.assetAction === 'sell');
-const typeLabel = (item: Transaction) => item.type === 'income' ? 'Ingreso' : item.type === 'expense' ? item.expenseType === 'fixed' ? 'Fijo' : 'Gasto' : item.type === 'saving' ? item.assetAction === 'sell' ? 'Venta USD' : 'Compra USD' : item.assetAction === 'sell' ? 'Venta CEDEAR' : 'Compra CEDEAR';
+const typeLabel = (item: Transaction) => item.type === 'income' ? 'Ingreso' : item.type === 'expense' ? item.expenseType === 'fixed' ? 'Fijo' : 'Gasto' : item.type === 'saving' ? item.goalId ? 'Aporte' : item.assetAction === 'sell' ? 'Venta USD' : 'Compra USD' : item.assetAction === 'sell' ? 'Venta CEDEAR' : 'Compra CEDEAR';
 const displayedMovement = (item: Transaction) => item.type === 'saving' && item.exchangeRate != null
   ? { value: (item.assetAction === 'sell' ? 1 : -1) * item.amount * item.exchangeRate, currency: 'ARS' as const }
   : { value: isIncoming(item) ? item.amount : -item.amount, currency: item.currency };

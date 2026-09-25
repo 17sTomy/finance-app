@@ -1,6 +1,7 @@
 import type { FinanceDatabase, FixedExpense, MonthlyFinanceData, MonthlyLimit, RecurringIncome, Transaction } from './models';
 import { newId } from './models';
 import { projectFixedExpense, projectSalary } from './projections';
+import { expenseRevision } from './fixedExpense';
 import { incomeRevision } from './recurringIncome';
 
 export function copyPreviousMonthLimits(
@@ -34,17 +35,30 @@ export function synchronizeFixedExpensesForMonth(database: FinanceDatabase, targ
 }
 
 export function saveFixedExpenseSchedule(database: FinanceDatabase, expense: FixedExpense, fromMonth: string): FinanceDatabase {
-  const fixedExpenses = database.fixedExpenses.some((item) => item.id === expense.id)
-    ? database.fixedExpenses.map((item) => item.id === expense.id ? expense : item)
-    : [...database.fixedExpenses, expense];
+  const previous = database.fixedExpenses.find((item) => item.id === expense.id);
+  const history = previous?.history?.length
+    ? previous.history
+    : previous ? [expenseRevision(previous, previous.startDate.slice(0, 7))] : [];
+  const updated: FixedExpense = {
+    ...expense,
+    history: [
+      ...history.filter((item) => item.fromMonth < fromMonth),
+      expenseRevision(expense, fromMonth),
+    ].sort((a, b) => a.fromMonth.localeCompare(b.fromMonth)),
+  };
+  const fixedExpenses = previous
+    ? database.fixedExpenses.map((item) => item.id === expense.id ? updated : item)
+    : [...database.fixedExpenses, updated];
   const months = Object.fromEntries(Object.entries(database.months).map(([key, month]) => {
     if (key < fromMonth) return [key, month];
-    const projection = projectFixedExpense(expense, month.year, month.month);
+    const matches = (item: Transaction) => item.type === 'expense' && item.recurrenceId === expense.id;
+    const existing = month.transactions.find(matches);
+    const projection = projectFixedExpense(updated, month.year, month.month);
     return [key, {
       ...month,
       transactions: [
-        ...month.transactions.filter((item) => item.recurrenceId !== expense.id),
-        ...(projection ? [projection] : []),
+        ...month.transactions.filter((item) => !matches(item)),
+        ...(projection ? [{ ...existing, ...projection, id: existing?.id ?? projection.id }] : []),
       ],
     }];
   }));
@@ -107,6 +121,12 @@ export function storeTransactionByDate(
   const target = months[targetKey] ?? targetMonth;
   return {
     ...database,
+    goals: database.goals.map((goal) => ({
+      ...goal,
+      contributions: goal.contributions.map((contribution) => contribution.transactionId === transaction.id
+        ? { ...contribution, amount: transaction.amount, date: transaction.date }
+        : contribution),
+    })),
     months: {
       ...months,
       [targetKey]: { ...target, transactions: [...target.transactions, transaction] },

@@ -1,5 +1,6 @@
 import { addMonths, differenceInCalendarMonths, endOfMonth, format, getDay, isAfter, isBefore, isSameMonth, parseISO, setDate, startOfMonth } from 'date-fns';
 import type { FinanceDatabase, FixedExpense, InstallmentPlan, RecurringIncome, Transaction } from './models';
+import { fixedExpenseForMonth } from './fixedExpense';
 import { recurringIncomeForMonth } from './recurringIncome';
 import { isValidISODate } from '../../../shared/utils/dates';
 
@@ -10,6 +11,7 @@ export function firstBusinessDay(year: number, month: number, holidayDates: Read
 }
 
 export function isFixedExpenseActive(expense: FixedExpense, year: number, month: number): boolean {
+  expense = fixedExpenseForMonth(expense, `${year}-${String(month).padStart(2, '0')}`);
   if (!expense.active || !isValidISODate(expense.startDate)) return false;
   const target = new Date(year, month - 1, 1, 12);
   const start = startOfMonth(parseISO(expense.startDate));
@@ -21,6 +23,7 @@ export function isFixedExpenseActive(expense: FixedExpense, year: number, month:
 }
 
 export function projectFixedExpense(expense: FixedExpense, year: number, month: number, dueBy?: string): Transaction | null {
+  expense = fixedExpenseForMonth(expense, `${year}-${String(month).padStart(2, '0')}`);
   if (!isFixedExpenseActive(expense, year, month)) return null;
   const dueDate = setDate(new Date(year, month - 1, 1, 12), Math.min(expense.dueDay, endOfMonth(new Date(year, month - 1, 1)).getDate()));
   const dueDateISO = format(dueDate, 'yyyy-MM-dd');

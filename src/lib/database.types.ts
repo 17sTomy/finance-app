@@ -19,7 +19,7 @@ export interface UserPreferencesRow extends Record<string, unknown> {
 export interface CategoryRow extends BaseRow { name: string; icon: string; color: string; kind: string; parent_category_id: string | null }
 export interface FixedExpenseRow extends BaseRow {
   name: string; amount: number; currency: string; category_id: string | null; start_date: string; due_day: number;
-  duration_type: string; duration_count: number | null; duration_end_date: string | null; reminder_enabled: boolean; notes: string | null; active: boolean;
+  duration_type: string; duration_count: number | null; duration_end_date: string | null; reminder_enabled: boolean; notes: string | null; active: boolean; expense_history: Json;
 }
 export interface RecurringIncomeRow extends BaseRow { name: string; amount: number; currency: string; start_date: string; active: boolean; salary_history: Json }
 export interface InstallmentPlanRow extends BaseRow {

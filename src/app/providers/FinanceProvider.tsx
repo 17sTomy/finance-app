@@ -8,6 +8,7 @@ import { generateInstallments, synchronizeSalaryDates } from '../../modules/fina
 import { addGoalContribution, copyPreviousMonthLimits, deleteTransactionCascade, saveFixedExpenseSchedule, saveRecurringIncomeSchedule, storeTransactionByDate, synchronizeFixedExpensesForMonth, updateInstallmentSeries } from '../../modules/finance/domain/financeOperations';
 import { createDemoDatabase, createMonth } from '../../modules/finance/infrastructure/demoData';
 import { getCachedHolidayDates, loadArgentinaHolidayDates } from '../../modules/finance/infrastructure/argentinaHolidays';
+import { fixedExpenseForMonth } from '../../modules/finance/domain/fixedExpense';
 import { recurringIncomeForMonth } from '../../modules/finance/domain/recurringIncome';
 import { useAuth } from './AuthProvider';
 
@@ -204,7 +205,9 @@ export function FinanceProvider({ children }: { children: ReactNode }) {
     saveFixedExpense: (expense) => setDatabase((current) => saveFixedExpenseSchedule(current, expense, selectedMonth)),
     toggleFixedExpense: (id) => setDatabase((current) => {
       const expense = current.fixedExpenses.find((item) => item.id === id);
-      return expense ? saveFixedExpenseSchedule(current, { ...expense, active: !expense.active }, selectedMonth) : current;
+      if (!expense) return current;
+      const applicable = fixedExpenseForMonth(expense, selectedMonth);
+      return saveFixedExpenseSchedule(current, { ...applicable, active: !applicable.active }, selectedMonth);
     }),
     deleteFixedExpense: (id) => setDatabase((current) => ({ ...current, fixedExpenses: current.fixedExpenses.filter((item) => item.id !== id), months: Object.fromEntries(Object.entries(current.months).map(([key, month]) => [key, { ...month, transactions: month.transactions.map((item) => item.recurrenceId === id ? { ...item, recurrenceId: undefined } : item) }])) })),
     saveRecurringIncome: (income) => setDatabase((current) =>
@@ -236,7 +239,11 @@ export function FinanceProvider({ children }: { children: ReactNode }) {
     deleteCategory: (id) => setDatabase((current) => ({
       ...current,
       categories: current.categories.filter((item) => item.id !== id).map((item) => item.parentId === id ? { ...item, parentId: undefined } : item),
-      fixedExpenses: current.fixedExpenses.map((item) => item.categoryId === id ? { ...item, categoryId: '' } : item),
+      fixedExpenses: current.fixedExpenses.map((item) => ({
+        ...item,
+        categoryId: item.categoryId === id ? '' : item.categoryId,
+        history: item.history?.map((revision) => revision.categoryId === id ? { ...revision, categoryId: '' } : revision),
+      })),
       installmentPlans: current.installmentPlans.map((item) => item.categoryId === id ? { ...item, categoryId: '' } : item),
       goals: current.goals.map((item) => item.categoryId === id ? { ...item, categoryId: undefined } : item),
       months: Object.fromEntries(Object.entries(current.months).map(([key, month]) => [key, {

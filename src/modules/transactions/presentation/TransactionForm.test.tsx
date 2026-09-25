@@ -13,6 +13,7 @@ const finance = vi.hoisted(() => ({
       { id: 'investments', name: 'Inversiones', icon: '↗', color: '#456789', kind: 'investment' as const },
     ],
     months: {},
+    goals: [],
   },
   selectedMonth: '2026-08',
   addTransaction,
@@ -90,5 +91,28 @@ describe('transaction category selection', () => {
       investmentTicker: 'SPY',
       investmentQuantity: 2,
     }));
+  });
+});
+
+describe('edición de aportes a objetivos', () => {
+  it.each(['ARS', 'USD'] as const)('conserva la moneda %s sin pedir una compra de dólares', (currency) => {
+    const initial = {
+      id: 'contribution-transaction', goalId: 'goal', type: 'saving' as const,
+      name: 'Aporte al viaje', amount: 10000, currency, date: '2026-08-15', categoryId: 'savings',
+    };
+    render(<TransactionForm initial={initial} onDone={vi.fn()} />);
+    expect(screen.queryByLabelText('Operación')).toBeNull();
+    expect(screen.queryByLabelText('Tipo de cambio (ARS por USD)')).toBeNull();
+    const selector = screen.getByLabelText('Moneda') as HTMLSelectElement;
+    expect(selector.value).toBe(currency);
+    expect(selector.disabled).toBe(true);
+    fireEvent.change(screen.getByLabelText('Importe'), { target: { value: '20000' } });
+    fireEvent.change(screen.getByLabelText('Fecha'), { target: { value: '2026-09-03' } });
+    fireEvent.click(screen.getByRole('button', { name: 'Guardar cambios' }));
+    expect(finance.updateTransaction).toHaveBeenCalledWith({
+      ...initial, amount: 20000, date: '2026-09-03',
+      assetAction: undefined, exchangeRate: undefined, expenseType: undefined,
+      investmentTicker: undefined, investmentQuantity: undefined, notes: undefined,
+    });
   });
 });
