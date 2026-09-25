@@ -37,23 +37,23 @@ describe('SupabaseFinanceRepository optimistic concurrency', () => {
 
     const snapshot = await new SupabaseFinanceRepository().load('user-1');
 
-    expect(client.rpc).toHaveBeenCalledWith('get_finance_data');
+    expect(client.rpc).toHaveBeenCalledWith('get_finance_data_for_user', { p_user_id: 'user-1' });
     expect(snapshot).toEqual({ database: emptyDatabase, revision: 4 });
   });
 
   it('sends the expected revision and returns the next revision after save', async () => {
     client.rpc.mockResolvedValueOnce({ data: 5, error: null });
 
-    const snapshot = await new SupabaseFinanceRepository().save(emptyDatabase, 4);
+    const snapshot = await new SupabaseFinanceRepository().save(emptyDatabase, 4, 'user-1');
 
-    expect(client.rpc).toHaveBeenCalledWith('replace_finance_data', expect.objectContaining({ p_expected_revision: 4 }));
+    expect(client.rpc).toHaveBeenCalledWith('save_finance_data', expect.objectContaining({ p_expected_revision: 4, p_user_id: 'user-1' }));
     expect(snapshot.revision).toBe(5);
   });
 
   it('reports a stale snapshot as an explicit concurrency conflict', async () => {
     client.rpc.mockResolvedValueOnce({ data: null, error: { code: 'PT409', message: 'FINANCE_VERSION_CONFLICT' } });
 
-    const save = new SupabaseFinanceRepository().save(emptyDatabase, 3);
+    const save = new SupabaseFinanceRepository().save(emptyDatabase, 3, 'user-1');
 
     await expect(save).rejects.toMatchObject({ name: 'FinanceConflictError' });
   });

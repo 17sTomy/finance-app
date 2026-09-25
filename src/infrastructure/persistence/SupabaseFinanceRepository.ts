@@ -21,18 +21,17 @@ function assertResult(error: SupabaseError | null) {
 
 export class SupabaseFinanceRepository implements FinanceRepository {
   async load(userId: string): Promise<FinanceSnapshot> {
-    void userId;
-    const { data, error } = await getSupabase().rpc('get_finance_data');
+    const { data, error } = await getSupabase().rpc('get_finance_data_for_user', { p_user_id: userId });
     assertResult(error);
     const snapshot = data as unknown as { revision?: unknown; rows?: FinanceRows; telegramMonths?: string[] } | null;
     if (!snapshot?.rows || typeof snapshot.revision !== 'number') throw new Error('Supabase devolvió un snapshot financiero inválido.');
-    return { database: initializeTelegramMonths(rowsToFinanceDatabase(snapshot.rows), snapshot.telegramMonths ?? []), revision: snapshot.revision };
+    return { database: initializeTelegramMonths(rowsToFinanceDatabase(snapshot.rows), snapshot.telegramMonths ?? []), revision: snapshot.revision, ...(snapshot.telegramMonths?.length ? { needsSave: true } : {}) };
   }
 
-  async save(database: FinanceDatabase, expectedRevision: number): Promise<FinanceSnapshot> {
+  async save(database: FinanceDatabase, expectedRevision: number, userId: string): Promise<FinanceSnapshot> {
     const normalized = normalizeFinanceDatabaseIds(database);
     const payload = financeDatabaseToPayload(normalized) as unknown as Json;
-    const { data, error } = await getSupabase().rpc('replace_finance_data', { p_data: payload, p_expected_revision: expectedRevision });
+    const { data, error } = await getSupabase().rpc('save_finance_data', { p_data: payload, p_expected_revision: expectedRevision, p_user_id: userId });
     if (error?.code === 'PT409' || error?.message.includes('FINANCE_VERSION_CONFLICT')) throw new FinanceConflictError();
     assertResult(error);
     const revision = Number(data);
@@ -46,8 +45,8 @@ export class SupabaseFinanceRepository implements FinanceRepository {
     return data ? { selectedMonth: data.selected_month, showAmounts: data.show_amounts } : null;
   }
 
-  async savePreferences(preferences: AppPreferences): Promise<void> {
-    const { error } = await getSupabase().from('user_preferences').upsert({ selected_month: preferences.selectedMonth, show_amounts: preferences.showAmounts }, { onConflict: 'user_id' });
+  async savePreferences(preferences: AppPreferences, userId: string): Promise<void> {
+    const { error } = await getSupabase().from('user_preferences').upsert({ user_id: userId, selected_month: preferences.selectedMonth, show_amounts: preferences.showAmounts }, { onConflict: 'user_id' });
     assertResult(error);
   }
 

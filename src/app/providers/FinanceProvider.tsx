@@ -1,6 +1,8 @@
-import { createContext, useCallback, useContext, useEffect, useMemo, useRef, useState, type ReactNode } from 'react';
+import { createContext, useCallback, useContext, useEffect, useMemo, useRef, useState, useSyncExternalStore, type ReactNode } from 'react';
 import { addMonths, format, parseISO } from 'date-fns';
-import { FinanceConflictError, SupabaseFinanceRepository } from '../../infrastructure/persistence/SupabaseFinanceRepository';
+import { SupabaseFinanceRepository } from '../../infrastructure/persistence/SupabaseFinanceRepository';
+import { FinanceSync } from '../../infrastructure/persistence/FinanceSync';
+import type { FinanceConflictChoices, FinanceMergeConflict } from '../../infrastructure/persistence/financeMerge';
 import { normalizeFinanceDatabaseIds } from '../../infrastructure/persistence/financeMappers';
 import type { CalendarEvent, Category, FinanceDatabase, FixedExpense, InstallmentPlan, MonthlyLimit, RecurringIncome, SavingsGoal, Transaction } from '../../modules/finance/domain/models';
 import { newId } from '../../modules/finance/domain/models';
@@ -21,6 +23,10 @@ interface FinanceContextValue {
   loadError: string | null;
   saveError: string | null;
   hasSaveConflict: boolean;
+  syncConflicts: FinanceMergeConflict[];
+  resolveSyncConflicts: (choices: FinanceConflictChoices) => void;
+  exportRemoteJson: () => string;
+  refreshFinance: () => void;
   retryLoad: () => void;
   retrySave: () => void;
   changeMonth: (offset: number) => void;
@@ -52,7 +58,7 @@ interface FinanceContextValue {
 const repository = new SupabaseFinanceRepository();
 const FinanceContext = createContext<FinanceContextValue | null>(null);
 const currentMonth = () => format(new Date(), 'yyyy-MM');
-const emptyDatabase = (): FinanceDatabase => ({ version: 1, months: {}, categories: [], fixedExpenses: [], recurringIncomes: [], installmentPlans: [], goals: [] });
+
 
 function ensureDatabaseMonth(source: FinanceDatabase, key: string) {
   const [year, month] = key.split('-').map(Number);
@@ -68,53 +74,35 @@ function ensureDatabaseMonth(source: FinanceDatabase, key: string) {
 
 export function FinanceProvider({ children }: { children: ReactNode }) {
   const { user } = useAuth();
+  return user ? <FinanceSession key={user.id} userId={user.id}>{children}</FinanceSession> : null;
+}
+
+function FinanceSession({ children, userId }: { children: ReactNode; userId: string }) {
+  const [sync] = useState(() => new FinanceSync(userId, repository));
+  const { database, saveError: syncError, conflicts, backupError } = useSyncExternalStore(sync.subscribe, sync.getSnapshot);
+  const setDatabase = sync.update;
+  const saveError = backupError ?? syncError;
+  const hasSaveConflict = conflicts.length > 0;
   const [selectedMonth, setSelectedMonthState] = useState(currentMonth);
-  const [database, setDatabase] = useState<FinanceDatabase>(emptyDatabase);
   const [showAmounts, setShowAmounts] = useState(true);
   const [isLoading, setIsLoading] = useState(true);
   const [hydrated, setHydrated] = useState(false);
   const [loadError, setLoadError] = useState<string | null>(null);
-  const [saveError, setSaveError] = useState<string | null>(null);
-  const [hasSaveConflict, setHasSaveConflict] = useState(false);
-  const saveQueue = useRef<Promise<void>>(Promise.resolve());
+  const [preferenceError, setPreferenceError] = useState<string | null>(null);
   const loadRequest = useRef(0);
-  const revision = useRef(0);
-  const saveConflict = useRef(false);
-
-  const persistSnapshot = useCallback((snapshot: FinanceDatabase) => {
-    saveQueue.current = saveQueue.current.catch(() => undefined).then(async () => {
-      if (saveConflict.current) return;
-      const stored = await repository.save(snapshot, revision.current);
-      revision.current = stored.revision;
-      setSaveError(null);
-    }).catch((error: unknown) => {
-      console.error('Falló la sincronización con Supabase.', error);
-      if (error instanceof FinanceConflictError) {
-        saveConflict.current = true;
-        setHasSaveConflict(true);
-        setSaveError('Tus datos cambiaron en otra pestaña o dispositivo. Recargá la versión más reciente para evitar sobrescribirlos.');
-      } else {
-        setSaveError('No pudimos sincronizar los últimos cambios con Supabase. Revisá tu conexión y reintentá.');
-      }
-    });
-  }, []);
 
   const loadFinance = useCallback(async () => {
-    if (!user) return;
     const request = ++loadRequest.current;
     setIsLoading(true);
     setLoadError(null);
     try {
-      const [snapshot, preferences] = await Promise.all([repository.load(user.id), repository.loadPreferences(user.id)]);
+      const [snapshot, preferences] = await Promise.all([repository.load(userId), repository.loadPreferences(userId)]);
       if (loadRequest.current !== request) return;
       const month = preferences?.selectedMonth ?? currentMonth();
-      revision.current = snapshot.revision;
-      saveConflict.current = false;
-      setHasSaveConflict(false);
-      setSaveError(null);
       setSelectedMonthState(month);
       setShowAmounts(preferences?.showAmounts ?? true);
-      setDatabase(ensureDatabaseMonth(snapshot.database, month));
+      sync.initialize(snapshot);
+      sync.update((current) => ensureDatabaseMonth(current, month));
       setHydrated(true);
     } catch (error: unknown) {
       if (loadRequest.current !== request) return;
@@ -123,44 +111,50 @@ export function FinanceProvider({ children }: { children: ReactNode }) {
     } finally {
       if (loadRequest.current === request) setIsLoading(false);
     }
-  }, [user]);
+  }, [userId, sync]);
 
   useEffect(() => {
+    sync.start();
     void Promise.resolve().then(loadFinance);
-    return () => { loadRequest.current += 1; };
-  }, [loadFinance]);
+    return () => { loadRequest.current += 1; sync.stop(); };
+  }, [loadFinance, sync]);
 
   useEffect(() => {
     if (!hydrated) return;
-    const timer = window.setTimeout(() => persistSnapshot(database), 180);
-    return () => window.clearTimeout(timer);
-  }, [database, hydrated, persistSnapshot]);
-
-  useEffect(() => {
-    if (!hydrated) return;
-    const timer = window.setTimeout(() => repository.savePreferences({ selectedMonth, showAmounts }).catch((error: unknown) => {
-      console.error('No se pudieron guardar las preferencias.', error);
-      setSaveError('No pudimos sincronizar tus preferencias con Supabase.');
-    }), 180);
-    return () => window.clearTimeout(timer);
-  }, [selectedMonth, showAmounts, hydrated]);
+    let active = true;
+    const timer = window.setTimeout(() => repository.savePreferences({ selectedMonth, showAmounts }, userId)
+      .then(() => { if (active) setPreferenceError(null); })
+      .catch(() => { if (active) setPreferenceError('No pudimos sincronizar tus preferencias con Supabase.'); }), 180);
+    return () => { active = false; window.clearTimeout(timer); };
+  }, [selectedMonth, showAmounts, hydrated, userId]);
 
   useEffect(() => {
     if (!hydrated) return;
     const controller = new AbortController();
     const year = Number(selectedMonth.slice(0, 4));
     loadArgentinaHolidayDates(year, controller.signal)
-      .then((dates) => setDatabase((current) => synchronizeSalaryDates(current, year, dates)))
+      .then((dates) => { if (!controller.signal.aborted) setDatabase((current) => synchronizeSalaryDates(current, year, dates)); })
       .catch((error: unknown) => { if (!(error instanceof DOMException && error.name === 'AbortError')) console.warn('Se usa el calendario hábil local como respaldo.', error); });
     return () => controller.abort();
-  }, [selectedMonth, hydrated]);
+  }, [selectedMonth, hydrated, setDatabase]);
+
+  useEffect(() => {
+    if (!hydrated) return;
+    const refresh = () => { if (document.visibilityState !== 'hidden') void sync.refresh(); };
+    window.addEventListener('focus', refresh);
+    document.addEventListener('visibilitychange', refresh);
+    return () => {
+      window.removeEventListener('focus', refresh);
+      document.removeEventListener('visibilitychange', refresh);
+    };
+  }, [hydrated, sync]);
 
   const ensureMonth = useCallback((key: string, source = database) => ensureDatabaseMonth(source, key), [database]);
 
   const setSelectedMonth = useCallback((key: string) => {
     setDatabase((current) => ensureMonth(key, current));
     setSelectedMonthState(key);
-  }, [ensureMonth]);
+  }, [ensureMonth, setDatabase]);
 
   const changeMonth = useCallback((offset: number) => {
     setSelectedMonth(format(addMonths(parseISO(`${selectedMonth}-01`), offset), 'yyyy-MM'));
@@ -179,10 +173,18 @@ export function FinanceProvider({ children }: { children: ReactNode }) {
     showAmounts,
     isLoading,
     loadError,
-    saveError,
+    saveError: saveError ?? preferenceError,
     hasSaveConflict,
+    syncConflicts: conflicts,
+    resolveSyncConflicts: sync.resolve,
+    exportRemoteJson: sync.remoteJson,
+    refreshFinance: () => { void sync.refresh(); },
     retryLoad: () => { void loadFinance(); },
-    retrySave: () => { if (saveConflict.current) void loadFinance(); else persistSnapshot(database); },
+    retrySave: () => {
+      void sync.refresh();
+      if (preferenceError) void repository.savePreferences({ selectedMonth, showAmounts }, userId)
+        .then(() => setPreferenceError(null)).catch(() => undefined);
+    },
     changeMonth,
     setSelectedMonth,
     toggleAmounts: () => setShowAmounts((current) => !current),
@@ -261,9 +263,10 @@ export function FinanceProvider({ children }: { children: ReactNode }) {
     deleteEvent: (id) => updateCurrentMonth((month) => ({ ...month, events: month.events.filter((item) => item.id !== id) })),
     importJson: async (raw) => {
       const imported = normalizeFinanceDatabaseIds(repository.importData(raw, database));
-      const stored = await repository.save(imported, revision.current);
-      revision.current = stored.revision;
-      setDatabase(stored.database);
+      setDatabase(imported);
+      await sync.flush();
+      const status = sync.getSnapshot();
+      if (status.saveError) throw new Error(status.saveError);
     },
     exportJson: (scope) => {
       if (scope === 'month') return repository.exportMonth(database.months[selectedMonth]);
@@ -275,7 +278,7 @@ export function FinanceProvider({ children }: { children: ReactNode }) {
     },
     resetDemo: () => { setDatabase(normalizeFinanceDatabaseIds(createDemoDatabase())); setSelectedMonthState('2026-08'); },
   // eslint-disable-next-line react-hooks/exhaustive-deps
-  }), [database, selectedMonth, showAmounts, isLoading, loadError, saveError, hasSaveConflict, changeMonth, setSelectedMonth, loadFinance, persistSnapshot]);
+  }), [database, selectedMonth, showAmounts, isLoading, loadError, saveError, hasSaveConflict, changeMonth, setSelectedMonth, loadFinance, sync, conflicts, preferenceError]);
 
   return <FinanceContext.Provider value={value}>{children}</FinanceContext.Provider>;
 }

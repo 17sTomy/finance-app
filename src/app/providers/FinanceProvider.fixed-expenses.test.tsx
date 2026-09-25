@@ -24,10 +24,10 @@ function fixture(active = true): FinanceDatabase {
   const database: FinanceDatabase = {
     version: 1, categories: [], installmentPlans: [], goals: [], months: {},
     fixedExpenses: [{
-      id: 'rent', name: 'Alquiler', amount: 450000, currency: 'ARS', categoryId: '',
+      id: '22222222-2222-4222-8222-222222222222', name: 'Alquiler', amount: 450000, currency: 'ARS', categoryId: '',
       startDate: '2026-01-01', dueDay: 10, duration: { type: 'unlimited' }, reminderEnabled: true, active,
     }],
-    recurringIncomes: [{ id: 'salary', name: 'Sueldo', amount: 1800000, currency: 'ARS', startDate: '2026-01-01', active }],
+    recurringIncomes: [{ id: '11111111-1111-4111-8111-111111111111', name: 'Sueldo', amount: 1800000, currency: 'ARS', startDate: '2026-01-01', active }],
   };
   for (const month of [7, 8, 9]) database.months['2026-' + String(month).padStart(2, '0')] = createMonth(2026, month, database);
   return database;
@@ -44,11 +44,11 @@ async function openFinance(database = fixture()) {
 
 function rents(database: FinanceDatabase, keys: string[]) {
   return Object.fromEntries(keys.map((key) => [key, database.months[key].transactions
-    .filter((item) => item.recurrenceId === 'rent').reduce((sum, item) => sum + item.amount, 0)]));
+    .filter((item) => item.recurrenceId === '22222222-2222-4222-8222-222222222222').reduce((sum, item) => sum + item.amount, 0)]));
 }
 
 beforeEach(() => {
-  vi.clearAllMocks();
+  vi.clearAllMocks(); localStorage.clear(); sessionStorage.clear();
   repository.loadPreferences.mockResolvedValue({ selectedMonth: '2026-08', showAmounts: true });
   repository.savePreferences.mockResolvedValue(undefined);
   repository.save.mockImplementation(async (database, revision) => ({ database, revision: revision + 1 }));
@@ -77,11 +77,11 @@ describe('gastos fijos y navegación mensual', () => {
       ],
     };
     const { result } = await openFinance(database);
-    await act(async () => { result.current.toggleFixedExpense('rent'); });
+    await act(async () => { result.current.toggleFixedExpense('22222222-2222-4222-8222-222222222222'); });
     await act(async () => { result.current.setSelectedMonth('2026-10'); });
     expect(rents(result.current.database, ['2026-07', '2026-08', '2026-09', '2026-10']))
       .toEqual({ '2026-07': 450000, '2026-08': 0, '2026-09': 0, '2026-10': 0 });
-    await act(async () => { result.current.toggleFixedExpense('rent'); });
+    await act(async () => { result.current.toggleFixedExpense('22222222-2222-4222-8222-222222222222'); });
     await act(async () => { result.current.setSelectedMonth('2026-09'); });
     expect(rents(result.current.database, ['2026-07', '2026-08', '2026-09', '2026-10']))
       .toEqual({ '2026-07': 450000, '2026-08': 0, '2026-09': 0, '2026-10': 450000 });

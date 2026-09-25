@@ -60,6 +60,8 @@ export interface Database {
     };
     Views: Record<string, never>;
     Functions: {
+      get_finance_data_for_user: { Args: { p_user_id: string }; Returns: Json };
+      save_finance_data: { Args: { p_user_id: string; p_data: Json; p_expected_revision: number }; Returns: number };
       telegram_connection_status: { Args: Record<string, never>; Returns: Json };
       create_telegram_link: { Args: Record<string, never>; Returns: Json };
       disconnect_telegram: { Args: Record<string, never>; Returns: undefined };

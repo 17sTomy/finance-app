@@ -11,6 +11,8 @@ beforeEach(() => {
   vi.resetAllMocks();
   vi.mocked(getTelegramStatus).mockResolvedValue(available);
 });
+vi.mock('../../../app/providers/FinanceProvider', () => ({ useFinance: () => ({ refreshFinance: vi.fn() }) }));
+
 describe('Telegram settings', () => {
   it('creates a personal link and then displays the linked account', async () => {
     vi.mocked(createTelegramLink).mockResolvedValue({ url: 'https://t.me/finance_test_bot?start=code', expiresAt: new Date(Date.now() + 600000).toISOString() });

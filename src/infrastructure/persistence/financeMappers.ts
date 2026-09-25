@@ -140,7 +140,7 @@ export function normalizeFinanceDatabaseIds(database: FinanceDatabase): FinanceD
   const transactionIds = buildIdMap(transactions.map((item) => item.id));
   const limitIds = buildIdMap(limits.map((item) => item.id));
   const eventIds = buildIdMap(events.map((item) => item.id));
-  const contributionIds = buildIdMap(database.goals.flatMap((goal) => goal.contributions.map((item) => `${goal.id}:${item.id}`)));
+  const contributionIds = new Map(database.goals.flatMap((goal) => goal.contributions.map((item) => [goal.id + ':' + item.id, uuidPattern.test(item.id) ? item.id : crypto.randomUUID()])));
   const recurrenceId = (id?: string) => id ? fixedIds.get(id) ?? incomeIds.get(id) : undefined;
 
   return {

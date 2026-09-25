@@ -50,7 +50,7 @@ const context = await browser.newContext({ viewport: { width: 1440, height: 1100
 const page = await context.newPage();
 const errors = [];
 page.on('pageerror', (error) => errors.push(error.message));
-page.on('console', (message) => { if (message.type() === 'error' && !message.text().includes('fonts.googleapis')) errors.push(message.text()); });
+page.on('console', (message) => { if (message.type() === 'error' && !message.text().includes('fonts.googleapis') && !(message.text().includes('409') && message.location().url.includes('/rpc/save_finance_data'))) errors.push(message.text()); });
 const assert = (condition, message) => { if (!condition) throw new Error(message); };
 const checks = [];
 const check = (name) => checks.push({ name, ok: true });
@@ -348,8 +348,41 @@ try {
   assert(!recorded.error && recorded.data.status === 'saved', 'No se guardó el gasto recibido por Telegram');
   const duplicateTelegram = await admin.rpc('record_telegram_expense', telegramExpense);
   assert(!duplicateTelegram.error && duplicateTelegram.data.duplicate, 'Telegram duplicó el gasto al reintentar');
+  // Exact regression: Telegram advances the server revision while this tab
+  // continues entering expenses from the older version.
+  await page.getByRole('link', { name: 'Movimientos', exact: true }).click();
+  for (const name of ['Gasto local concurrente uno', 'Gasto local concurrente dos']) {
+    await page.getByRole('button', { name: 'Nuevo movimiento' }).click();
+    const movementDialog = page.getByRole('dialog');
+    await movementDialog.getByLabel('Nombre').fill(name);
+    await movementDialog.getByLabel('Importe').fill('4321');
+    await movementDialog.getByLabel('Fecha').fill('2027-01-15');
+    await movementDialog.getByRole('button', { name: 'Guardar movimiento' }).click();
+    await movementDialog.waitFor({ state: 'hidden' });
+  }
+  let concurrentRows = [];
+  for (let attempt = 0; attempt < 80; attempt++) {
+    const stored = await apiA.from('transactions').select('name').in('name', [
+      'Gasto local concurrente uno', 'Gasto local concurrente dos', 'supermercado Telegram QA',
+    ]);
+    assert(!stored.error, 'No se pudieron verificar los gastos simultáneos');
+    concurrentRows = stored.data;
+    if (concurrentRows.length === 3) break;
+    await page.waitForTimeout(100);
+  }
+  assert(concurrentRows.length === 3, 'La sincronización perdió un gasto local o el de Telegram');
+  assert(await page.locator('.data-error').count() === 0, 'Quedó un conflicto sin resolver después de combinar gastos independientes');
+  await page.getByRole('link', { name: 'Datos', exact: true }).click();
   await page.reload({ waitUntil: 'domcontentloaded' });
   await page.getByText('Cuenta vinculada con @finance_qa.').waitFor();
+  const afterReload = await apiA.from('transactions').select('name').in('name', [
+    'Gasto local concurrente uno', 'Gasto local concurrente dos', 'supermercado Telegram QA',
+  ]);
+  assert(!afterReload.error && afterReload.data.length === 3, 'Recargar perdió los gastos combinados');
+  const recoveryCopies = await apiA.from('finance_backups').select('revision').limit(1);
+  assert(!recoveryCopies.error && recoveryCopies.data.length === 1, 'No se creó historial de recuperación');
+  check('Telegram y gastos locales concurrentes se combinan y sobreviven a la recarga');
+
   let januaryRows = [];
   for (let attempt = 0; attempt < 40; attempt++) {
     const stored = await apiA.from('transactions').select('name, amount, type').gte('transaction_date', '2027-01-01').lt('transaction_date', '2027-02-01');

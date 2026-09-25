@@ -1,9 +1,11 @@
 import { useEffect, useState } from 'react';
 import { MessageCircle, RefreshCw } from 'lucide-react';
+import { useFinance } from '../../../app/providers/FinanceProvider';
 import { Card, SectionHeader } from '../../../shared/components/Card';
 import { createTelegramLink, disconnectTelegram, getTelegramStatus, type TelegramLink, type TelegramStatus } from '../infrastructure/telegramApi';
 
 export function TelegramSettings() {
+  const { refreshFinance } = useFinance();
   const [status, setStatus] = useState<TelegramStatus | null>(null);
   const [link, setLink] = useState<TelegramLink | null>(null);
   const [busy, setBusy] = useState(false);
@@ -50,7 +52,8 @@ export function TelegramSettings() {
       <p role="status"><strong>Cuenta vinculada{status.telegramUsername ? ' con @' + status.telegramUsername : ''}.</strong></p>
       {status.botUsername && <a className="button button--primary" href={'https://t.me/' + status.botUsername} target="_blank" rel="noopener noreferrer"><MessageCircle size={17} /> Abrir bot</a>}
       <p className="muted small-copy">Usá ARS o USD; si no indicás moneda, se guardará en pesos. La fecha corresponde al día del mensaje en Argentina. El bot confirma el importe y la categoría.</p>
-      <p className="muted small-copy">Si la app ya estaba abierta, recargala para ver los gastos nuevos. Podés corregirlos desde Movimientos.</p>
+      <p className="muted small-copy">Los gastos se actualizan al volver a esta ventana. Podés actualizarlos ahora y corregirlos desde Movimientos.</p>
+      <button className="button button--ghost" onClick={refreshFinance}>Actualizar gastos</button>
       <button className="button button--ghost" disabled={busy} onClick={() => void perform('disconnect')}>Desvincular Telegram</button>
       <p className="muted small-copy">Desvincular conserva todos los gastos registrados.</p>
     </>}

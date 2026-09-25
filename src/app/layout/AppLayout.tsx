@@ -4,6 +4,7 @@ import { NavLink, Outlet } from 'react-router-dom';
 import { useFinance } from '../providers/FinanceProvider';
 import { MonthSelector } from '../../shared/components/MonthSelector';
 import { ReminderCenter } from '../../modules/calendar/presentation/ReminderCenter';
+import { FinanceConflictReview } from './FinanceConflictReview';
 import { useAuth } from '../providers/AuthProvider';
 
 const navigation = [
@@ -20,9 +21,11 @@ export function AppLayout() {
   const { showAmounts, toggleAmounts, isLoading, loadError, saveError, hasSaveConflict, retryLoad, retrySave } = useFinance();
   const { user, nickname, signOut } = useAuth();
   const displayNickname = nickname?.trim() || user?.email?.split('@')[0] || 'Usuario';
+  const [reviewOpen, setReviewOpen] = useState(false);
   const [menuOpen, setMenuOpen] = useState(false);
   const [remindersOpen, setRemindersOpen] = useState(false);
   return <div className="app-shell">
+    {hasSaveConflict && <FinanceConflictReview open={reviewOpen} onClose={() => setReviewOpen(false)} />}
     <aside className={`sidebar ${menuOpen ? 'sidebar--open' : ''}`}>
       <div className="brand" aria-label="Finance's App"><span className="brand__mark"><Landmark size={22} /></span><div><strong>Finance's</strong><small>App</small></div></div>
       <button className="icon-button sidebar__close" aria-label="Cerrar menú" onClick={() => setMenuOpen(false)}><X /></button>
@@ -42,8 +45,8 @@ export function AppLayout() {
       </header>
       <div className="page">
         {loadError && <div className="data-error" role="alert"><span>{loadError}</span><button className="text-button" onClick={retryLoad}>Reintentar carga</button></div>}
-        {saveError && <div className="data-error" role="alert"><span>{saveError}</span><button className="text-button" onClick={retrySave}>{hasSaveConflict ? 'Recargar datos' : 'Reintentar guardado'}</button></div>}
-        {isLoading ? <div className="route-loading">Cargando tus finanzas…</div> : <Outlet />}
+        {saveError && <div className="data-error" role="alert"><span>{saveError}</span><button className="text-button" onClick={hasSaveConflict ? () => setReviewOpen(true) : retrySave}>{hasSaveConflict ? 'Revisar cambios' : 'Reintentar guardado'}</button></div>}
+        {isLoading ? <div className="route-loading">Cargando tus finanzas…</div> : !loadError ? <Outlet /> : null}
       </div>
     </main>
     <nav className="bottom-nav">{navigation.slice(0, 5).map(({ to, label, icon: Icon }) => <NavLink key={to} to={to} end={to === '/'}><Icon size={20} /><span>{label === 'Planificación' ? 'Plan' : label}</span></NavLink>)}</nav>

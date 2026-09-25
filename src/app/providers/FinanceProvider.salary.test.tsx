@@ -23,7 +23,7 @@ vi.mock('../../modules/finance/infrastructure/argentinaHolidays', () => ({
 function fixture(active = true): FinanceDatabase {
   const database: FinanceDatabase = {
     version: 1, categories: [], fixedExpenses: [], installmentPlans: [], goals: [], months: {},
-    recurringIncomes: [{ id: 'salary', name: 'Sueldo', amount: 1800000, currency: 'ARS', startDate: '2026-01-01', active }],
+    recurringIncomes: [{ id: '11111111-1111-4111-8111-111111111111', name: 'Sueldo', amount: 1800000, currency: 'ARS', startDate: '2026-01-01', active }],
   };
   for (const month of [7, 8, 9]) database.months['2026-' + String(month).padStart(2, '0')] = createMonth(2026, month, database);
   return database;
@@ -43,7 +43,7 @@ function salaries(database: FinanceDatabase, keys: string[]) {
 }
 
 beforeEach(() => {
-  vi.clearAllMocks();
+  vi.clearAllMocks(); localStorage.clear(); sessionStorage.clear();
   repository.loadPreferences.mockResolvedValue({ selectedMonth: '2026-08', showAmounts: true });
   repository.savePreferences.mockResolvedValue(undefined);
   repository.save.mockImplementation(async (database, revision) => ({ database, revision: revision + 1 }));
@@ -69,7 +69,7 @@ describe('sueldo recurrente y vigencia mensual', () => {
 
   it('pausar debe quitar el sueldo en todos los meses futuros', async () => {
     const { result } = await openFinance();
-    await act(async () => { result.current.toggleRecurringIncome('salary'); });
+    await act(async () => { result.current.toggleRecurringIncome('11111111-1111-4111-8111-111111111111'); });
     await act(async () => { result.current.setSelectedMonth('2026-10'); });
     const actual = salaries(result.current.database, ['2026-07', '2026-08', '2026-09', '2026-10']);
     expect(actual).toEqual({ '2026-07': 1800000, '2026-08': 0, '2026-09': 0, '2026-10': 0 });
@@ -77,7 +77,7 @@ describe('sueldo recurrente y vigencia mensual', () => {
 
   it('reactivar debe restaurar el sueldo en meses futuros ya creados durante la pausa', async () => {
     const { result } = await openFinance(fixture(false));
-    await act(async () => { result.current.toggleRecurringIncome('salary'); });
+    await act(async () => { result.current.toggleRecurringIncome('11111111-1111-4111-8111-111111111111'); });
     await act(async () => { result.current.setSelectedMonth('2026-10'); });
     const actual = salaries(result.current.database, ['2026-08', '2026-09', '2026-10']);
     expect(actual).toEqual({ '2026-08': 1800000, '2026-09': 1800000, '2026-10': 1800000 });
@@ -94,7 +94,7 @@ describe('sueldo recurrente y vigencia mensual', () => {
       ],
     };
     const { result } = await openFinance(database);
-    await act(async () => { result.current.toggleRecurringIncome('salary'); });
+    await act(async () => { result.current.toggleRecurringIncome('11111111-1111-4111-8111-111111111111'); });
     expect(salaries(result.current.database, ['2026-07', '2026-08', '2026-09']))
       .toEqual({ '2026-07': 1800000, '2026-08': 0, '2026-09': 0 });
   });
