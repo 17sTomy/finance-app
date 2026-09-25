@@ -1,5 +1,6 @@
 import { addMonths, differenceInCalendarMonths, endOfMonth, format, getDay, isAfter, isBefore, isSameMonth, parseISO, setDate, startOfMonth } from 'date-fns';
 import type { FinanceDatabase, FixedExpense, InstallmentPlan, RecurringIncome, Transaction } from './models';
+import { recurringIncomeForMonth } from './recurringIncome';
 import { isValidISODate } from '../../../shared/utils/dates';
 
 export function firstBusinessDay(year: number, month: number, holidayDates: ReadonlySet<string> = new Set()): Date {
@@ -41,6 +42,7 @@ export function projectFixedExpense(expense: FixedExpense, year: number, month: 
 }
 
 export function projectSalary(income: RecurringIncome, year: number, month: number, holidayDates: ReadonlySet<string> = new Set()): Transaction | null {
+  income = recurringIncomeForMonth(income, `${year}-${String(month).padStart(2, '0')}`);
   const date = firstBusinessDay(year, month, holidayDates);
   const dateISO = format(date, 'yyyy-MM-dd');
   if (!income.active || !isValidISODate(income.startDate) || dateISO < income.startDate) return null;

@@ -1,6 +1,7 @@
-import type { FinanceDatabase, FixedExpense, MonthlyFinanceData, MonthlyLimit, Transaction } from './models';
+import type { FinanceDatabase, FixedExpense, MonthlyFinanceData, MonthlyLimit, RecurringIncome, Transaction } from './models';
 import { newId } from './models';
-import { projectFixedExpense } from './projections';
+import { projectFixedExpense, projectSalary } from './projections';
+import { incomeRevision } from './recurringIncome';
 
 export function copyPreviousMonthLimits(
   database: FinanceDatabase,
@@ -48,6 +49,49 @@ export function saveFixedExpenseSchedule(database: FinanceDatabase, expense: Fix
     }];
   }));
   return { ...database, fixedExpenses, months };
+}
+
+/**
+ * Replace the schedule from the selected month onward, retaining earlier terms.
+ * Existing transactions before that month are immutable historical snapshots.
+ */
+export function saveRecurringIncomeSchedule(
+  database: FinanceDatabase,
+  income: RecurringIncome,
+  fromMonth: string,
+  holidaysForYear: (year: number) => ReadonlySet<string> = () => new Set(),
+): FinanceDatabase {
+  const previous = database.recurringIncomes.find((item) => item.id === income.id);
+  const history = previous?.history?.length
+    ? previous.history
+    : previous ? [incomeRevision(previous, previous.startDate.slice(0, 7))] : [];
+  const updated: RecurringIncome = {
+    ...income,
+    history: [
+      ...history.filter((item) => item.fromMonth < fromMonth),
+      incomeRevision(income, fromMonth),
+    ].sort((a, b) => a.fromMonth.localeCompare(b.fromMonth)),
+  };
+  const months = Object.fromEntries(Object.entries(database.months).map(([key, month]) => {
+    if (key < fromMonth) return [key, month];
+    const matches = (item: Transaction) => item.type === 'income' && item.recurrenceId === income.id;
+    const existing = month.transactions.find(matches);
+    const projection = projectSalary(updated, month.year, month.month, holidaysForYear(month.year));
+    return [key, {
+      ...month,
+      transactions: [
+        ...month.transactions.filter((item) => !matches(item)),
+        ...(projection ? [{ ...existing, ...projection, id: existing?.id ?? projection.id }] : []),
+      ],
+    }];
+  }));
+  return {
+    ...database,
+    recurringIncomes: previous
+      ? database.recurringIncomes.map((item) => item.id === income.id ? updated : item)
+      : [...database.recurringIncomes, updated],
+    months,
+  };
 }
 
 export function storeTransactionByDate(

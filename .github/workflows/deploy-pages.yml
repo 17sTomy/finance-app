@@ -77,6 +77,9 @@ jobs:
             | grep -E '^(API_URL|ANON_KEY|SERVICE_ROLE_KEY)=' \
             | sed -E 's/="([^"]*)"$/=\1/' >> "$GITHUB_ENV"
 
+      - name: Test recurring income history in PostgreSQL
+        run: docker exec -i supabase_db_finance-app psql -U postgres -d postgres -v ON_ERROR_STOP=1 < qa/recurring-income-history.sql
+
       - name: Build against local Supabase
         run: npm run build
         env:

@@ -4,10 +4,11 @@ import { FinanceConflictError, SupabaseFinanceRepository } from '../../infrastru
 import { normalizeFinanceDatabaseIds } from '../../infrastructure/persistence/financeMappers';
 import type { CalendarEvent, Category, FinanceDatabase, FixedExpense, InstallmentPlan, MonthlyLimit, RecurringIncome, SavingsGoal, Transaction } from '../../modules/finance/domain/models';
 import { newId } from '../../modules/finance/domain/models';
-import { generateInstallments, projectSalary, synchronizeSalaryDates } from '../../modules/finance/domain/projections';
-import { addGoalContribution, copyPreviousMonthLimits, deleteTransactionCascade, saveFixedExpenseSchedule, storeTransactionByDate, synchronizeFixedExpensesForMonth, updateInstallmentSeries } from '../../modules/finance/domain/financeOperations';
+import { generateInstallments, synchronizeSalaryDates } from '../../modules/finance/domain/projections';
+import { addGoalContribution, copyPreviousMonthLimits, deleteTransactionCascade, saveFixedExpenseSchedule, saveRecurringIncomeSchedule, storeTransactionByDate, synchronizeFixedExpensesForMonth, updateInstallmentSeries } from '../../modules/finance/domain/financeOperations';
 import { createDemoDatabase, createMonth } from '../../modules/finance/infrastructure/demoData';
 import { getCachedHolidayDates, loadArgentinaHolidayDates } from '../../modules/finance/infrastructure/argentinaHolidays';
+import { recurringIncomeForMonth } from '../../modules/finance/domain/recurringIncome';
 import { useAuth } from './AuthProvider';
 
 interface FinanceContextValue {
@@ -206,26 +207,13 @@ export function FinanceProvider({ children }: { children: ReactNode }) {
       return expense ? saveFixedExpenseSchedule(current, { ...expense, active: !expense.active }, selectedMonth) : current;
     }),
     deleteFixedExpense: (id) => setDatabase((current) => ({ ...current, fixedExpenses: current.fixedExpenses.filter((item) => item.id !== id), months: Object.fromEntries(Object.entries(current.months).map(([key, month]) => [key, { ...month, transactions: month.transactions.map((item) => item.recurrenceId === id ? { ...item, recurrenceId: undefined } : item) }])) })),
-    saveRecurringIncome: (income) => setDatabase((current) => {
-      const recurringIncomes = current.recurringIncomes.some((item) => item.id === income.id) ? current.recurringIncomes.map((item) => item.id === income.id ? income : item) : [...current.recurringIncomes, income];
-      const snapshot = current.months[selectedMonth];
-      const [year, month] = selectedMonth.split('-').map(Number);
-      const projected = projectSalary(income, year, month, getCachedHolidayDates(year));
-      if (!snapshot) return { ...current, recurringIncomes };
-      const transactions = [...snapshot.transactions.filter((item) => !(item.recurrenceId === income.id && item.type === 'income')), ...(projected ? [projected] : [])];
-      return { ...current, recurringIncomes, months: { ...current.months, [selectedMonth]: { ...snapshot, transactions } } };
-    }),
+    saveRecurringIncome: (income) => setDatabase((current) =>
+      saveRecurringIncomeSchedule(current, income, selectedMonth, getCachedHolidayDates)),
     toggleRecurringIncome: (id) => setDatabase((current) => {
       const income = current.recurringIncomes.find((item) => item.id === id);
       if (!income) return current;
-      const updated = { ...income, active: !income.active };
-      const recurringIncomes = current.recurringIncomes.map((item) => item.id === id ? updated : item);
-      const snapshot = current.months[selectedMonth];
-      const [year, month] = selectedMonth.split('-').map(Number);
-      const projected = projectSalary(updated, year, month, getCachedHolidayDates(year));
-      if (!snapshot) return { ...current, recurringIncomes };
-      const transactions = [...snapshot.transactions.filter((item) => !(item.recurrenceId === id && item.type === 'income')), ...(projected ? [projected] : [])];
-      return { ...current, recurringIncomes, months: { ...current.months, [selectedMonth]: { ...snapshot, transactions } } };
+      const applicable = recurringIncomeForMonth(income, selectedMonth);
+      return saveRecurringIncomeSchedule(current, { ...applicable, active: !applicable.active }, selectedMonth, getCachedHolidayDates);
     }),
     addInstallmentPlan: (planValue) => setDatabase((current) => {
       const plan = { ...planValue, id: newId() };

@@ -1,8 +1,8 @@
 import { createDemoDatabase } from '../infrastructure/demoData';
 import { financeDatabaseToPayload, rowsToFinanceDatabase, type FinanceRows } from '../../../infrastructure/persistence/financeMappers';
-import { addGoalContribution, copyPreviousMonthLimits, deleteTransactionCascade, saveFixedExpenseSchedule, storeTransactionByDate, synchronizeFixedExpensesForMonth, updateInstallmentSeries } from './financeOperations';
-import { calculateSummary, goalTotal } from './financeSelectors';
-import { generateInstallments } from './projections';
+import { addGoalContribution, copyPreviousMonthLimits, deleteTransactionCascade, saveFixedExpenseSchedule, saveRecurringIncomeSchedule, storeTransactionByDate, synchronizeFixedExpensesForMonth, updateInstallmentSeries } from './financeOperations';
+import { calculateSummary, goalTargetAmount, goalTotal, limitProgress } from './financeSelectors';
+import { generateInstallments, projectSalary } from './projections';
 
 function reloadFromPersistence(database: ReturnType<typeof createDemoDatabase>) {
   const payload = financeDatabaseToPayload(database);
@@ -172,5 +172,73 @@ describe('operaciones financieras sincronizadas', () => {
 
     expect(result.months['2026-08']).toEqual(historicalAugust);
     expect(result.months['2026-09'].transactions).toContainEqual(expect.objectContaining({ recurrenceId: expense.id, date: '2026-09-10' }));
+  });
+});
+
+
+describe('historial de sueldos', () => {
+  it('conserva aumentos, pausas, moneda e inicio al guardar y recargar', () => {
+    let database = createDemoDatabase();
+    const save = (fromMonth: string, changes: Partial<typeof database.recurringIncomes[number]>) => {
+      database = saveRecurringIncomeSchedule(database, { ...database.recurringIncomes[0], ...changes }, fromMonth);
+    };
+    save('2026-08', { amount: 2400000 });
+    save('2026-10', { active: false });
+    save('2026-12', { active: true, name: 'Nuevo empleo', currency: 'USD', amount: 2800, startDate: '2026-12-10' });
+    const reloaded = reloadFromPersistence(database);
+    const salary = reloaded.recurringIncomes[0];
+
+    expect(projectSalary(salary, 2026, 6)).toMatchObject({ amount: 1800000, currency: 'ARS', name: 'Sueldo' });
+    expect(projectSalary(salary, 2026, 9)).toMatchObject({ amount: 2400000, currency: 'ARS' });
+    expect(projectSalary(salary, 2026, 10)).toBeNull();
+    expect(projectSalary(salary, 2026, 11)).toBeNull();
+    expect(projectSalary(salary, 2026, 12)).toBeNull();
+    expect(projectSalary(salary, 2027, 1)).toMatchObject({ amount: 2800, currency: 'USD', name: 'Nuevo empleo' });
+    expect(salary.history).toEqual(database.recurringIncomes[0].history);
+    expect(reloaded.months['2026-07'].transactions.find((item) => item.type === 'income')?.amount).toBe(1800000);
+  });
+
+  it('reemplaza cambios posteriores desde el mes elegido sin perder el historial anterior', () => {
+    let database = createDemoDatabase();
+    const original = database.recurringIncomes[0];
+    database = saveRecurringIncomeSchedule(database, { ...original, amount: 2400000 }, '2026-08');
+    database = saveRecurringIncomeSchedule(database, { ...original, amount: 3000000 }, '2026-10');
+    database = saveRecurringIncomeSchedule(database, { ...original, amount: 2200000 }, '2026-08');
+    const salary = database.recurringIncomes[0];
+
+    expect(salary.history?.map((item) => item.fromMonth)).toEqual(['2026-01', '2026-08']);
+    expect(projectSalary(salary, 2026, 7)?.amount).toBe(1800000);
+    expect(projectSalary(salary, 2026, 8)?.amount).toBe(2200000);
+    expect(projectSalary(salary, 2026, 10)?.amount).toBe(2200000);
+    expect(projectSalary(salary, 2027, 2)?.amount).toBe(2200000);
+  });
+
+  it('conserva IDs y metadatos y recalcula límites y metas con el nuevo sueldo', () => {
+    const database = createDemoDatabase();
+    const month = database.months['2026-08'];
+    const original = month.transactions.find((item) => item.type === 'income' && item.recurrenceId)!;
+    original.notes = 'Liquidación mensual';
+    original.categoryId = 'salary';
+    const history = structuredClone(database.months['2026-07']);
+    const result = saveRecurringIncomeSchedule(database, { ...database.recurringIncomes[0], amount: 2400000 }, '2026-08', () => new Set(['2026-08-03']));
+    const updated = result.months['2026-08'];
+    expect(updated.transactions.filter((item) => item.recurrenceId === original.recurrenceId))
+      .toEqual([{ ...original, amount: 2400000, date: '2026-08-04' }]);
+    expect(result.months['2026-07']).toEqual(history);
+    expect(limitProgress(updated.limits[0], updated).limitAmount).toBe(144000);
+    expect(goalTargetAmount(result.goals.find((item) => item.targetMode === 'salaryPercentage')!, updated)).toBe(360000);
+  });
+
+  it('agrega un sueldo a meses futuros ya creados sin generarlo antes del mes elegido', () => {
+    const database = createDemoDatabase();
+    const result = saveRecurringIncomeSchedule(database, {
+      id: 'second-job', name: 'Segundo empleo', amount: 500000, currency: 'ARS',
+      startDate: '2026-01-01', active: true,
+    }, '2026-08');
+    const salary = result.recurringIncomes.find((item) => item.id === 'second-job')!;
+    expect(result.months['2026-07'].transactions.some((item) => item.recurrenceId === salary.id)).toBe(false);
+    expect(result.months['2026-08'].transactions.filter((item) => item.recurrenceId === salary.id)).toHaveLength(1);
+    expect(projectSalary(salary, 2026, 6)).toBeNull();
+    expect(projectSalary(salary, 2026, 9)?.amount).toBe(500000);
   });
 });

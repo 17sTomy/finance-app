@@ -21,7 +21,7 @@ export interface FixedExpenseRow extends BaseRow {
   name: string; amount: number; currency: string; category_id: string | null; start_date: string; due_day: number;
   duration_type: string; duration_count: number | null; duration_end_date: string | null; reminder_enabled: boolean; notes: string | null; active: boolean;
 }
-export interface RecurringIncomeRow extends BaseRow { name: string; amount: number; currency: string; start_date: string; active: boolean }
+export interface RecurringIncomeRow extends BaseRow { name: string; amount: number; currency: string; start_date: string; active: boolean; salary_history: Json }
 export interface InstallmentPlanRow extends BaseRow {
   description: string; total_amount: number; installment_count: number; first_installment_date: string; currency: string; category_id: string | null; notes: string | null;
 }

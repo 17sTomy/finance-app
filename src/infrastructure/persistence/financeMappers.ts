@@ -80,6 +80,7 @@ export function rowsToFinanceDatabase(rows: FinanceRows): FinanceDatabase {
   }));
   const recurringIncomes: RecurringIncome[] = rows.recurringIncomes.map((row) => ({
     id: row.id, name: row.name, amount: Number(row.amount), currency: asCurrency(row.currency), startDate: row.start_date, active: row.active,
+    history: (row.salary_history ?? []) as unknown as RecurringIncome['history'],
   }));
   const installmentPlans: InstallmentPlan[] = rows.installmentPlans.map((row) => ({
     id: row.id, description: row.description, totalAmount: Number(row.total_amount), installmentCount: row.installment_count,
@@ -183,7 +184,7 @@ export function financeDatabaseToPayload(input: FinanceDatabase): FinancePersist
       due_day: item.dueDay, duration_type: item.duration.type, duration_count: item.duration.type === 'months' ? item.duration.count : null,
       duration_end_date: item.duration.type === 'until' ? item.duration.endDate : null, reminder_enabled: item.reminderEnabled, notes: item.notes ?? null, active: item.active,
     })),
-    recurring_incomes: database.recurringIncomes.map((item) => ({ id: item.id, name: item.name, amount: item.amount, currency: item.currency, start_date: item.startDate, active: item.active })),
+    recurring_incomes: database.recurringIncomes.map((item) => ({ id: item.id, name: item.name, amount: item.amount, currency: item.currency, start_date: item.startDate, active: item.active, salary_history: item.history ?? [] })),
     installment_plans: database.installmentPlans.map((item) => ({
       id: item.id, description: item.description, total_amount: item.totalAmount, installment_count: item.installmentCount,
       first_installment_date: item.firstInstallmentDate, currency: item.currency, category_id: item.categoryId || null, notes: item.notes ?? null,

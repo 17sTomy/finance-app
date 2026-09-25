@@ -53,13 +53,21 @@ export interface FixedExpense {
   active: boolean;
 }
 
-export interface RecurringIncome {
-  id: string;
+export interface RecurringIncomeTerms {
   name: string;
   amount: number;
   currency: Currency;
   startDate: string;
   active: boolean;
+}
+
+export interface RecurringIncomeRevision extends RecurringIncomeTerms {
+  fromMonth: string;
+}
+
+export interface RecurringIncome extends RecurringIncomeTerms {
+  id: string;
+  history?: RecurringIncomeRevision[];
 }
 
 export interface InstallmentPlan {

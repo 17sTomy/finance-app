@@ -1,5 +1,6 @@
 import { fireEvent, render, screen } from '@testing-library/react';
 import { vi } from 'vitest';
+import type { RecurringIncome } from '../../finance/domain/models';
 import { FixedExpensesPage } from './FixedExpensesPage';
 
 const saveFixedExpense = vi.hoisted(() => vi.fn());
@@ -8,7 +9,7 @@ const finance = vi.hoisted(() => ({
   database: {
     categories: [{ id: 'housing', name: 'Vivienda', icon: '🏠', color: '#123456', kind: 'expense' }],
     fixedExpenses: [],
-    recurringIncomes: [],
+    recurringIncomes: [] as RecurringIncome[],
   },
   selectedMonth: '2026-09',
   showAmounts: true,
@@ -22,7 +23,13 @@ const finance = vi.hoisted(() => ({
 vi.mock('../../../app/providers/FinanceProvider', () => ({ useFinance: () => finance }));
 
 describe('recurrence date forms', () => {
-  beforeEach(() => vi.clearAllMocks());
+  beforeEach(() => {
+    vi.clearAllMocks();
+    vi.useFakeTimers({ toFake: ['Date'] });
+    vi.setSystemTime(new Date('2026-09-24T12:00:00'));
+    finance.database.recurringIncomes = [];
+  });
+  afterEach(() => vi.useRealTimers());
 
   it('defaults a new salary to the selected month and rejects an empty start date', () => {
     render(<FixedExpensesPage />);
@@ -37,6 +44,21 @@ describe('recurrence date forms', () => {
 
     expect(screen.getByText('Elegí una fecha de inicio válida.')).toBeTruthy();
     expect(saveRecurringIncome).not.toHaveBeenCalled();
+  });
+
+  it('edits the salary terms for the selected month instead of the latest future terms', () => {
+    finance.database.recurringIncomes = [{
+      id: 'salary', name: 'Sueldo', amount: 2400000, currency: 'ARS', startDate: '2026-01-01', active: false,
+      history: [
+        { fromMonth: '2026-01', name: 'Sueldo', amount: 1800000, currency: 'ARS', startDate: '2026-01-01', active: true },
+        { fromMonth: '2026-10', name: 'Sueldo', amount: 2400000, currency: 'ARS', startDate: '2026-01-01', active: false },
+      ],
+    }];
+    render(<FixedExpensesPage />);
+    expect(screen.getByRole('button', { name: 'Pausar' })).toBeTruthy();
+    fireEvent.click(screen.getByRole('button', { name: 'Editar Sueldo' }));
+    expect((screen.getByLabelText('Importe') as HTMLInputElement).value).toBe('1800000');
+    expect(screen.getByText(/Los cambios se aplican desde 2026-09 inclusive/)).toBeTruthy();
   });
 
   it('rejects a fixed-expense end date before its start date', () => {

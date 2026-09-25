@@ -89,6 +89,18 @@ La URL y ambas claves locales aparecen al ejecutar `npx supabase status`. La ser
 
 El workflow de CI levanta esa misma stack local con Docker, aplica las migraciones desde cero, instala Chromium y ejecuta el E2E antes de habilitar el deploy. El runner rechaza cualquier `QA_SUPABASE_URL` cuyo host no sea `127.0.0.1`, `localhost` o `::1`, por lo que este flujo no puede apuntar a producción. Para reproducirlo localmente hacen falta Docker, la CLI incluida en las dependencias del proyecto y Chromium administrado por Playwright (`npx playwright-core install chromium`).
 
+## Cambios de sueldo por mes
+
+Editar, pausar o reactivar un sueldo recurrente desde **Gastos fijos** aplica las nuevas condiciones desde el mes seleccionado inclusive. Se actualizan los meses futuros ya creados y las proyecciones de meses nuevos. Los meses anteriores mantienen sus movimientos y las condiciones vigentes en su momento, incluso si se abren por primera vez después del cambio. Una edición reemplaza las condiciones programadas desde el mes elegido en adelante.
+
+El historial se guarda en `recurring_incomes.salary_history`. Al actualizar una instalación existente, aplicá `20260925010000_recurring_income_history.sql` con `npx supabase db push` antes de publicar este frontend. Los datos anteriores y los respaldos sin historial siguen siendo compatibles: su configuración previa se conserva al realizar el primer cambio. Los importes que ya se hubieran perdido antes de esta actualización no se pueden reconstruir automáticamente.
+
+Las pruebas de persistencia, validación, concurrencia y aislamiento del historial corren en CI contra Supabase local. También se pueden ejecutar después de `npx supabase start`:
+
+```bash
+docker exec -i supabase_db_finance-app psql -U postgres -d postgres -v ON_ERROR_STOP=1 < qa/recurring-income-history.sql
+```
+
 ## Migrar un respaldo JSON anterior
 
 La pantalla **Datos** sigue aceptando las exportaciones JSON de la versión local. También se incluye un importador idempotente por usuario:
