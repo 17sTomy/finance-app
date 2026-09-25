@@ -9,7 +9,8 @@
     "lint": "eslint .",
     "test": "vitest run",
     "test:e2e": "node qa/browser-qa.mjs",
-    "test:watch": "vitest"
+    "test:watch": "vitest",
+    "configure:telegram": "node scripts/configure-telegram.mjs"
   },
   "dependencies": {
     "@supabase/supabase-js": "^2.112.3",

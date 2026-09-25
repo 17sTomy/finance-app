@@ -3,6 +3,7 @@ import { getSupabase } from '../../lib/supabase';
 import type { AppPreferences, FinanceDatabase } from '../../modules/finance/domain/models';
 import type { FinanceRepository, FinanceSnapshot } from './FinanceRepository';
 import { financeDatabaseToPayload, normalizeFinanceDatabaseIds, rowsToFinanceDatabase, type FinanceRows } from './financeMappers';
+import { initializeTelegramMonths } from '../../modules/telegram/application/initializeTelegramMonths';
 import { parseFinanceImport } from './financeImport';
 
 interface SupabaseError { code?: string; message: string }
@@ -23,9 +24,9 @@ export class SupabaseFinanceRepository implements FinanceRepository {
     void userId;
     const { data, error } = await getSupabase().rpc('get_finance_data');
     assertResult(error);
-    const snapshot = data as unknown as { revision?: unknown; rows?: FinanceRows } | null;
+    const snapshot = data as unknown as { revision?: unknown; rows?: FinanceRows; telegramMonths?: string[] } | null;
     if (!snapshot?.rows || typeof snapshot.revision !== 'number') throw new Error('Supabase devolvió un snapshot financiero inválido.');
-    return { database: rowsToFinanceDatabase(snapshot.rows), revision: snapshot.revision };
+    return { database: initializeTelegramMonths(rowsToFinanceDatabase(snapshot.rows), snapshot.telegramMonths ?? []), revision: snapshot.revision };
   }
 
   async save(database: FinanceDatabase, expectedRevision: number): Promise<FinanceSnapshot> {

@@ -83,6 +83,9 @@ jobs:
       - name: Test fixed expense history in PostgreSQL
         run: docker exec -i supabase_db_finance-app psql -U postgres -d postgres -v ON_ERROR_STOP=1 < qa/fixed-expense-history.sql
 
+      - name: Test Telegram isolation, idempotency and snapshot concurrency
+        run: docker exec -i supabase_db_finance-app psql -U postgres -d postgres -v ON_ERROR_STOP=1 < qa/telegram-expenses.sql
+
       - name: Build against local Supabase
         run: npm run build
         env:

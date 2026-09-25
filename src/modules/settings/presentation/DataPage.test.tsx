@@ -2,6 +2,8 @@ import { fireEvent, render, screen, waitFor } from '@testing-library/react';
 import { vi } from 'vitest';
 import { DataPage } from './DataPage';
 
+vi.mock('../../telegram/presentation/TelegramSettings', () => ({ TelegramSettings: () => null }));
+
 const updateNickname = vi.hoisted(() => vi.fn().mockResolvedValue(undefined));
 
 vi.mock('../../../app/providers/AuthProvider', () => ({

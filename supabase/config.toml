@@ -45,3 +45,6 @@ file_size_limit = "50MiB"
 
 [edge_runtime]
 enabled = false
+
+[functions.telegram-expense]
+verify_jwt = false

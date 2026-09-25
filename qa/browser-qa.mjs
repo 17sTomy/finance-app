@@ -328,6 +328,45 @@ try {
   assert(await page.getByText('$••••', { exact: true }).count() >= 1, 'La preferencia de privacidad no persistió');
   check('preferencias sincronizadas');
 
+  // Telegram's external delivery is simulated through server-only RPCs on LOCAL Supabase.
+  const configuredBot = await admin.from('telegram_settings').update({ bot_id: 123456, bot_username: 'finance_test_bot', enabled: true }).eq('id', 1);
+  assert(!configuredBot.error, 'No se pudo configurar el bot local de prueba');
+  await page.goto(baseUrl + '/#/datos', { waitUntil: 'domcontentloaded' });
+  await page.getByRole('button', { name: 'Vincular Telegram' }).click();
+  const telegramLink = page.getByRole('link', { name: 'Abrir bot en Telegram' });
+  await telegramLink.waitFor();
+  const linkToken = new URL(await telegramLink.getAttribute('href')).searchParams.get('start');
+  const linked = await admin.rpc('complete_telegram_link', { p_bot_id: 123456, p_token: linkToken, p_chat_id: 456, p_username: 'finance_qa' });
+  assert(!linked.error && linked.data.status === 'linked', 'No se pudo vincular Telegram con la cuenta');
+  await page.getByRole('button', { name: 'Actualizar estado de Telegram' }).click();
+  await page.getByText('Cuenta vinculada con @finance_qa.').waitFor();
+  await page.waitForTimeout(700);
+  const foodCategory = await apiA.from('categories').select('id').eq('name', 'Supermercado').single();
+  assert(!foodCategory.error, 'No se encontró Supermercado para el gasto Telegram');
+  const telegramExpense = { p_bot_id: 123456, p_update_id: 1, p_chat_id: 456, p_message_id: 1, p_name: 'supermercado Telegram QA', p_amount: 3000, p_currency: 'ARS', p_date: '2027-01-15', p_category_id: foodCategory.data.id };
+  const recorded = await admin.rpc('record_telegram_expense', telegramExpense);
+  assert(!recorded.error && recorded.data.status === 'saved', 'No se guardó el gasto recibido por Telegram');
+  const duplicateTelegram = await admin.rpc('record_telegram_expense', telegramExpense);
+  assert(!duplicateTelegram.error && duplicateTelegram.data.duplicate, 'Telegram duplicó el gasto al reintentar');
+  await page.reload({ waitUntil: 'domcontentloaded' });
+  await page.getByText('Cuenta vinculada con @finance_qa.').waitFor();
+  let januaryRows = [];
+  for (let attempt = 0; attempt < 40; attempt++) {
+    const stored = await apiA.from('transactions').select('name, amount, type').gte('transaction_date', '2027-01-01').lt('transaction_date', '2027-02-01');
+    assert(!stored.error, 'No se pudo verificar el mes creado por Telegram');
+    januaryRows = stored.data;
+    if (januaryRows.some((item) => item.type === 'income')) break;
+    await page.waitForTimeout(100);
+  }
+  assert(januaryRows.filter((item) => item.name === 'supermercado Telegram QA').length === 1, 'Se perdió o duplicó el gasto de Telegram al recargar');
+  assert(januaryRows.some((item) => item.type === 'income'), 'El primer gasto por Telegram dejó el mes sin sueldo recurrente');
+  await page.screenshot({ path: fileURLToPath(new URL('telegram-connected.png', outputDir)), fullPage: true });
+  await page.getByRole('button', { name: 'Desvincular Telegram' }).click();
+  await page.getByRole('button', { name: 'Vincular Telegram' }).waitFor();
+  const keptExpense = await apiA.from('transactions').select('id, amount').eq('id', recorded.data.transactionId).single();
+  assert(!keptExpense.error && keptExpense.data.amount === 3000, 'Desvincular borró o alteró el gasto');
+  check('Telegram: vinculación, gasto único, mes nuevo completo y desvinculación sin borrar movimientos');
+
   await page.close();
   const { data: financeSnapshot, error: snapshotError } = await apiA.rpc('get_finance_data');
   assert(!snapshotError && Number.isSafeInteger(financeSnapshot?.revision), 'No se pudo leer la revisión financiera para probar concurrencia');
@@ -350,6 +389,7 @@ try {
   console.error('Errores capturados en navegador:', errors);
   throw error;
 } finally {
+  await admin.from('telegram_settings').update({ enabled: false, bot_id: null, bot_username: null }).eq('id', 1);
   await browser.close();
   server.kill();
   await Promise.all(createdUserIds.map((id) => admin.auth.admin.deleteUser(id)));
