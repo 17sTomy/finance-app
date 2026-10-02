@@ -7,6 +7,7 @@ export interface FinanceSnapshot {
 }
 
 export interface FinanceRepository {
+  subscribeToChanges?(userId: string, onChange: () => void): () => void;
   load(userId: string): Promise<FinanceSnapshot>;
   save(database: FinanceDatabase, expectedRevision: number, userId: string): Promise<FinanceSnapshot>;
   loadPreferences(userId: string): Promise<AppPreferences | null>;

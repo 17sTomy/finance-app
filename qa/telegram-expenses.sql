@@ -1,5 +1,15 @@
 -- Local-only integration tests. Fixtures and configuration are rolled back.
 begin;
+do $$
+begin
+  if not exists (
+    select 1 from pg_publication_tables
+    where pubname = 'supabase_realtime' and schemaname = 'public' and tablename = 'user_preferences'
+  ) then raise exception 'Finance revision notifications are not enabled'; end if;
+  if not (select relrowsecurity from pg_class where oid = 'public.user_preferences'::regclass)
+  then raise exception 'Finance notification table must retain RLS'; end if;
+end;
+$$;
 insert into auth.users(id) values
   ('fa000000-0000-4000-8000-000000000001'),
   ('fa000000-0000-4000-8000-000000000002');
@@ -10,6 +20,9 @@ select set_config('request.jwt.claim.sub', 'fa000000-0000-4000-8000-000000000001
 do $$
 declare link jsonb;
 begin
+  if (select count(*) from public.user_preferences) <> 1
+    or not exists (select 1 from public.user_preferences where user_id = auth.uid())
+  then raise exception 'Finance revision signal is not isolated to the authenticated owner'; end if;
   link := public.create_telegram_link();
   perform set_config('test.telegram_token_a', split_part(link->>'url', '?start=', 2), true);
   if length(current_setting('test.telegram_token_a')) <> 64 then raise exception 'Invalid link token'; end if;

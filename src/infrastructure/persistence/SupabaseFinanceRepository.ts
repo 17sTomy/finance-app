@@ -20,6 +20,23 @@ function assertResult(error: SupabaseError | null) {
 }
 
 export class SupabaseFinanceRepository implements FinanceRepository {
+  subscribeToChanges(userId: string, onChange: () => void): () => void {
+    const client = getSupabase();
+    let active = true;
+    const channel = client.channel(`finance-changes:${userId}`)
+      .on('postgres_changes', {
+        event: 'UPDATE', schema: 'public', table: 'user_preferences', filter: `user_id=eq.${userId}`,
+      }, () => { if (active) onChange(); })
+      .subscribe((status) => {
+        // Catch writes between initial loading and subscription, and missed writes on reconnect.
+        if (active && status === 'SUBSCRIBED') onChange();
+      });
+    return () => {
+      active = false;
+      void client.removeChannel(channel).catch(() => { /* The session has already stopped listening. */ });
+    };
+  }
+
   async load(userId: string): Promise<FinanceSnapshot> {
     const { data, error } = await getSupabase().rpc('get_finance_data_for_user', { p_user_id: userId });
     assertResult(error);

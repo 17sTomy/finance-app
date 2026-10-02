@@ -1,7 +1,7 @@
 import { vi } from 'vitest';
 import { SupabaseFinanceRepository } from './SupabaseFinanceRepository';
 
-const client = vi.hoisted(() => ({ rpc: vi.fn() }));
+const client = vi.hoisted(() => ({ rpc: vi.fn(), channel: vi.fn(), removeChannel: vi.fn() }));
 
 vi.mock('../../lib/supabase', () => ({
   getSupabase: () => client,
@@ -31,6 +31,27 @@ const emptyDatabase = {
 
 describe('SupabaseFinanceRepository optimistic concurrency', () => {
   beforeEach(() => vi.clearAllMocks());
+
+  it('subscribes only to this account and refreshes after initial connection or reconnect', () => {
+    const channel = { on: vi.fn(), subscribe: vi.fn() };
+    channel.on.mockReturnValue(channel);
+    channel.subscribe.mockReturnValue(channel);
+    client.channel.mockReturnValue(channel);
+    client.removeChannel.mockResolvedValue('ok');
+    const refresh = vi.fn();
+    const stop = new SupabaseFinanceRepository().subscribeToChanges('user-1', refresh);
+    expect(channel.on).toHaveBeenCalledWith('postgres_changes', {
+      event: 'UPDATE', schema: 'public', table: 'user_preferences', filter: 'user_id=eq.user-1',
+    }, expect.any(Function));
+    const changed = channel.on.mock.calls[0][2];
+    const status = channel.subscribe.mock.calls[0][0];
+    status('SUBSCRIBED'); changed(); status('CHANNEL_ERROR'); status('SUBSCRIBED');
+    expect(refresh).toHaveBeenCalledTimes(3);
+    stop();
+    expect(client.removeChannel).toHaveBeenCalledWith(channel);
+    changed(); status('SUBSCRIBED');
+    expect(refresh).toHaveBeenCalledTimes(3);
+  });
 
   it('loads finance rows and their revision in one atomic RPC', async () => {
     client.rpc.mockResolvedValueOnce({ data: { revision: 4, rows: emptyRows }, error: null });

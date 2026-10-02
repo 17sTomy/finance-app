@@ -1,5 +1,5 @@
-import { calculateSummary, dollarSavingsBalance, expensesByCategory, goalSavedAmount, investmentHoldings, limitCategoryBreakdown, limitProgress } from './financeSelectors';
-import type { Category, MonthlyFinanceData, Transaction } from './models';
+import { calculateSummary, cashBalanceForMonth, dollarSavingsBalance, expensesByCategory, goalSavedAmount, investmentHoldings, limitCategoryBreakdown, limitProgress } from './financeSelectors';
+import type { Category, FinanceDatabase, MonthlyFinanceData, Transaction } from './models';
 
 const transactions: Transaction[] = [
   { id: '1', name: 'Sueldo', amount: 1000, currency: 'ARS', date: '2026-08-01', type: 'income', recurrenceId: 'salary' },
@@ -11,6 +11,53 @@ const transactions: Transaction[] = [
 ];
 
 describe('selectores financieros', () => {
+  const cashDatabase = (): FinanceDatabase => ({
+    version: 1, categories: [], fixedExpenses: [], recurringIncomes: [], installmentPlans: [], goals: [],
+    months: {
+      '2026-12': { year: 2026, month: 12, limits: [], events: [], createdAt: '', transactions: [
+        { id: 'salary-dec', name: 'Sueldo', amount: 1000000, currency: 'ARS', date: '2026-12-01', type: 'income' },
+        { id: 'expenses-dec', name: 'Gastos', amount: 1090000, currency: 'ARS', date: '2026-12-20', type: 'expense' },
+      ] },
+      '2027-01': { year: 2027, month: 1, limits: [], events: [], createdAt: '', transactions: [
+        { id: 'salary-jan', name: 'Sueldo', amount: 1000000, currency: 'ARS', date: '2027-01-01', type: 'income' },
+        { id: 'gift', name: 'Regalo USD', amount: 100, currency: 'USD', exchangeRate: 0, assetAction: 'buy', date: '2027-01-02', type: 'saving' },
+      ] },
+      '2027-03': { year: 2027, month: 3, limits: [], events: [], createdAt: '', transactions: [
+        { id: 'future', name: 'Gasto futuro', amount: 2000000, currency: 'ARS', date: '2027-03-01', type: 'expense' },
+      ] },
+    },
+  });
+
+  it('arrastra un cierre de -90.000 al sueldo del mes siguiente, incluso entre años', () => {
+    const database = cashDatabase();
+    expect(cashBalanceForMonth(database, '2027-01')).toEqual({ openingBalance: -90000, monthlyBalance: 1000000, balance: 910000 });
+    expect(calculateSummary(database.months['2027-01'].transactions).income).toBe(1000000);
+    expect(dollarSavingsBalance(database, '2027-01')).toBe(100);
+  });
+
+  it('conserva saldos positivos en meses vacíos y no cuenta movimientos futuros', () => {
+    expect(cashBalanceForMonth(cashDatabase(), '2027-02')).toEqual({ openingBalance: 910000, monthlyBalance: 0, balance: 910000 });
+    expect(cashBalanceForMonth(cashDatabase(), '2026-11')).toEqual({ openingBalance: 0, monthlyBalance: 0, balance: 0 });
+  });
+
+  it('recalcula los meses siguientes al corregir o eliminar un movimiento anterior', () => {
+    const database = cashDatabase();
+    database.months['2026-12'].transactions[1].amount = 1100000;
+    expect(cashBalanceForMonth(database, '2027-01').balance).toBe(900000);
+    database.months['2026-12'].transactions.pop();
+    expect(cashBalanceForMonth(database, '2027-01').balance).toBe(2000000);
+  });
+
+  it('incluye compras y ventas en pesos y mantiene separados los ingresos en USD', () => {
+    const database = cashDatabase();
+    database.months['2026-12'].transactions.push(
+      { id: 'buy', name: 'Compra', amount: 100, currency: 'USD', exchangeRate: 1500, assetAction: 'buy', date: '2026-12-21', type: 'saving' },
+      { id: 'sell', name: 'Venta', amount: 25, currency: 'USD', exchangeRate: 1600, assetAction: 'sell', date: '2026-12-22', type: 'saving' },
+      { id: 'usd-income', name: 'Ingreso USD', amount: 500, currency: 'USD', date: '2026-12-23', type: 'income' },
+    );
+    expect(cashBalanceForMonth(database, '2027-01')).toEqual({ openingBalance: -200000, monthlyBalance: 1000000, balance: 800000 });
+  });
+
   it('calcula el balance sin mezclar monedas ni contar dos veces', () => {
     expect(calculateSummary(transactions)).toEqual({ income: 1000, expenses: 600, fixedExpenses: 300, variableExpenses: 100, assetPurchases: 200, assetSales: 0, savings: 150, investments: 50, balance: 400 });
     expect(calculateSummary(transactions, 'USD').balance).toBe(-25);

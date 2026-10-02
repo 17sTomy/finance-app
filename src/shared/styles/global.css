@@ -101,6 +101,7 @@ button:focus-visible, a:focus-visible, input:focus-visible, select:focus-visible
 .hero-money { display: block; font-size: clamp(27px, 2.4vw, 38px); font-weight: 800; letter-spacing: -1.5px; margin: 19px 0 10px; }
 .summary-money { display: block; font-size: clamp(22px, 2vw, 29px); font-weight: 800; letter-spacing: -.9px; margin: 17px 0 14px; }
 .trend-pill { display: inline-flex; align-items: center; gap: 5px; background: rgba(255,255,255,.17); padding: 6px 9px; border-radius: 99px; font-size: 11px; }
+.balance-breakdown { position: relative; z-index: 1; display: grid; grid-template-columns: 1fr auto; gap: 7px 12px; font-size: 12px; }
 .balance-orb { position: absolute; border: 1px solid rgba(255,255,255,.15); border-radius: 50%; }
 .balance-orb--one { width: 150px; height: 150px; right: -45px; bottom: -75px; }
 .balance-orb--two { width: 95px; height: 95px; right: 3px; bottom: -55px; background: rgba(255,255,255,.06); }
@@ -299,6 +300,7 @@ input:focus, select:focus, textarea:focus { border-color: var(--lavender-500); b
 .analysis-kpis .card > span:last-child { font: 800 17px 'Manrope'; }
 .analysis-kpis .soft-icon { margin-bottom: 5px; }
 .analysis-balance { background: var(--lavender-600); color: white; }
+.analysis-balance > span:not(.soft-icon) { font: 800 17px 'Manrope'; }
 .analysis-balance small { color: rgba(255,255,255,.75); }
 .analysis-grid { display: grid; grid-template-columns: repeat(2,minmax(0,1fr)); gap: 16px; }
 .chart-card--wide { grid-column: span 2; }

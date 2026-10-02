@@ -5,7 +5,7 @@ import { FinanceProvider, useFinance } from './FinanceProvider';
 import type { FinanceDatabase } from '../../modules/finance/domain/models';
 
 const repository = vi.hoisted(() => ({
-  load: vi.fn(), save: vi.fn(), loadPreferences: vi.fn(), savePreferences: vi.fn(), importData: vi.fn(),
+  load: vi.fn(), save: vi.fn(), loadPreferences: vi.fn(), savePreferences: vi.fn(), importData: vi.fn(), subscribeToChanges: vi.fn(),
 }));
 const auth = vi.hoisted(() => ({ user: { id: 'user-1', email: 'user@example.test' } }));
 vi.mock('../../infrastructure/persistence/SupabaseFinanceRepository', () => ({
@@ -63,4 +63,25 @@ it('remounts finance state for a different account without sending the previous 
   expect(result.current.monthData.transactions).toEqual([]);
   expect(repository.load).toHaveBeenLastCalledWith('user-2');
   expect(repository.save).not.toHaveBeenCalled();
+});
+
+it('receives a Telegram notification without leaving the app and preserves a pending local expense', async () => {
+  let notify!: () => void;
+  const unsubscribe = vi.fn();
+  repository.subscribeToChanges.mockImplementation((_userId, callback) => { notify = callback; return unsubscribe; });
+  const { result, unmount } = renderHook(useFinance, { wrapper });
+  await waitFor(() => expect(result.current.isLoading).toBe(false));
+  expect(repository.subscribeToChanges).toHaveBeenCalledWith('user-1', expect.any(Function));
+  const remote = fixture();
+  remote.months['2026-09'].transactions.push({ id: crypto.randomUUID(), name: 'Telegram', amount: 200, currency: 'ARS', date: '2026-09-25', type: 'expense' });
+  repository.load.mockResolvedValue({ database: remote, revision: 8 });
+  act(() => {
+    result.current.addTransaction({ name: 'Local pendiente', amount: 3000, currency: 'ARS', date: '2026-09-25', type: 'expense' });
+    notify();
+  });
+  await waitFor(() => expect(result.current.monthData.transactions.map((item) => item.name)).toEqual(expect.arrayContaining(['Local pendiente', 'Telegram'])));
+  expect(result.current.monthData.transactions).toHaveLength(2);
+  expect(result.current.hasSaveConflict).toBe(false);
+  unmount();
+  expect(unsubscribe).toHaveBeenCalledOnce();
 });

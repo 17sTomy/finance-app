@@ -75,6 +75,50 @@ describe('transaction category selection', () => {
     expect(Array.from((screen.getByLabelText('Subcategoría (opcional)') as HTMLSelectElement).options).map((option) => option.value)).toContain('gym');
   });
 
+  it('records a gift without requiring an exchange rate', () => {
+    const onDone = vi.fn();
+    render(<TransactionForm defaultType="saving" onDone={onDone} />);
+    fireEvent.change(screen.getByLabelText('Nombre'), { target: { value: 'Regalo' } });
+    fireEvent.change(screen.getByLabelText('Cantidad de dólares'), { target: { value: '100' } });
+    fireEvent.change(screen.getByLabelText('Operación'), { target: { value: 'gift' } });
+    expect((screen.getByLabelText('Tipo de cambio (ARS por USD)') as HTMLInputElement).disabled).toBe(true);
+    expect(screen.getByText('$ 0')).toBeTruthy();
+    fireEvent.click(screen.getByRole('button', { name: 'Guardar movimiento' }));
+    expect(addTransaction).toHaveBeenCalledWith(expect.objectContaining({ type: 'saving', currency: 'USD', assetAction: 'buy', amount: 100, exchangeRate: 0 }));
+    expect(onDone).toHaveBeenCalledOnce();
+  });
+
+  it.each(['', '-1'])('rejects an invalid purchase rate %s', (rate) => {
+    render(<TransactionForm defaultType="saving" onDone={vi.fn()} />);
+    fireEvent.change(screen.getByLabelText('Nombre'), { target: { value: 'Compra' } });
+    fireEvent.change(screen.getByLabelText('Cantidad de dólares'), { target: { value: '100' } });
+    fireEvent.change(screen.getByLabelText('Tipo de cambio (ARS por USD)'), { target: { value: rate } });
+    fireEvent.click(screen.getByRole('button', { name: 'Guardar movimiento' }));
+    expect(screen.getByRole('alert').textContent).toContain('tipo de cambio');
+    expect(addTransaction).not.toHaveBeenCalled();
+  });
+
+  it('requires a positive exchange rate after switching from gift to sale', () => {
+    render(<TransactionForm defaultType="saving" onDone={vi.fn()} />);
+    fireEvent.change(screen.getByLabelText('Nombre'), { target: { value: 'Venta' } });
+    fireEvent.change(screen.getByLabelText('Cantidad de dólares'), { target: { value: '100' } });
+    fireEvent.change(screen.getByLabelText('Operación'), { target: { value: 'gift' } });
+    fireEvent.change(screen.getByLabelText('Operación'), { target: { value: 'sell' } });
+    fireEvent.change(screen.getByLabelText('Tipo de cambio (ARS por USD)'), { target: { value: '0' } });
+    fireEvent.click(screen.getByRole('button', { name: 'Guardar movimiento' }));
+    expect(screen.getByRole('alert').textContent).toContain('tipo de cambio');
+    expect(addTransaction).not.toHaveBeenCalled();
+  });
+
+  it('preserves the zero cost when editing an existing gift', () => {
+    const initial = { id: 'gift', name: 'Regalo', amount: 100, currency: 'USD' as const, type: 'saving' as const, assetAction: 'buy' as const, exchangeRate: 0, date: '2026-08-01', categoryId: 'savings' };
+    render(<TransactionForm initial={initial} onDone={vi.fn()} />);
+    expect((screen.getByLabelText('Operación') as HTMLSelectElement).value).toBe('gift');
+    fireEvent.change(screen.getByLabelText('Cantidad de dólares'), { target: { value: '150' } });
+    fireEvent.click(screen.getByRole('button', { name: 'Guardar cambios' }));
+    expect(finance.updateTransaction).toHaveBeenCalledWith(expect.objectContaining({ id: 'gift', amount: 150, exchangeRate: 0 }));
+  });
+
   it('allows selecting any category when recording an investment', () => {
     render(<TransactionForm defaultType="investment" onDone={vi.fn()} />);
 

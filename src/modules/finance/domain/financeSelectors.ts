@@ -51,6 +51,15 @@ export function calculateSummary(transactions: Transaction[], currency: Currency
 }
 
 const sumAmount = (total: number, item: Transaction) => total + item.amount;
+/** Carry recorded cash flow forward without creating duplicate income/expense entries. */
+export function cashBalanceForMonth(database: FinanceDatabase, selectedMonth: string, currency: Currency = 'ARS') {
+  const openingBalance = Object.entries(database.months)
+    .filter(([key]) => key < selectedMonth)
+    .reduce((total, [, month]) => total + calculateSummary(month.transactions, currency).balance, 0);
+  const monthlyBalance = calculateSummary(database.months[selectedMonth]?.transactions ?? [], currency).balance;
+  return { openingBalance, monthlyBalance, balance: openingBalance + monthlyBalance };
+}
+
 export const sumByType = (transactions: Transaction[], type: TransactionType) =>
   transactions.filter((item) => item.type === type).reduce(sumAmount, 0);
 

@@ -30,6 +30,7 @@ export function TransactionForm({ initial, defaultType = 'expense', onDone }: Pr
   const [investmentQuantity, setInvestmentQuantity] = useState(initial?.investmentQuantity ? String(initial.investmentQuantity) : '');
   const [assetAction, setAssetAction] = useState<AssetAction>(initial?.assetAction ?? 'buy');
   const [exchangeRate, setExchangeRate] = useState(initial?.exchangeRate != null ? String(initial.exchangeRate) : '');
+  const [isGift, setIsGift] = useState(initial?.exchangeRate === 0 && initial?.assetAction !== 'sell');
   const [installments, setInstallments] = useState(false);
   const [count, setCount] = useState('3');
   const [error, setError] = useState('');
@@ -43,6 +44,7 @@ export function TransactionForm({ initial, defaultType = 'expense', onDone }: Pr
     setType(next);
     setCurrency(next === 'saving' ? 'USD' : 'ARS');
     setAssetAction('buy');
+    setIsGift(false);
     setCategoryId(nextCategories.find((item) => item.kind === next)?.id ?? nextCategories[0]?.id ?? '');
     setSubcategoryId('');
   };
@@ -51,12 +53,12 @@ export function TransactionForm({ initial, defaultType = 'expense', onDone }: Pr
     event.preventDefault();
     const numericAmount = Number(amount);
     const numericQuantity = Number(investmentQuantity);
-    const numericExchangeRate = Number(exchangeRate);
+    const numericExchangeRate = isDollarTrade && isGift ? 0 : Number(exchangeRate);
     const installmentCount = Number(count);
     if (!name.trim()) return setError('Ingresá un nombre.');
     if (!selectedCategoryId) return setError('Elegí una categoría. Si todavía no tenés una, creala desde Planificación.');
     if (!Number.isFinite(numericAmount) || numericAmount <= 0) return setError('El importe debe ser mayor a cero.');
-    if (isDollarTrade && (exchangeRate.trim() === '' || !Number.isFinite(numericExchangeRate) || numericExchangeRate < 0 || (assetAction === 'sell' && numericExchangeRate <= 0))) return setError('Ingresá el tipo de cambio en pesos.');
+    if (isDollarTrade && !isGift && (exchangeRate.trim() === '' || !Number.isFinite(numericExchangeRate) || numericExchangeRate < 0 || (assetAction === 'sell' && numericExchangeRate <= 0))) return setError('Ingresá el tipo de cambio en pesos.');
     if (isDollarTrade && assetAction === 'sell' && numericAmount > availableDollars) return setError(`Solo tenés USD ${availableDollars.toLocaleString('es-AR')} disponibles para vender.`);
     if (type === 'investment' && (!Number.isFinite(numericQuantity) || numericQuantity <= 0)) return setError('Ingresá una cantidad válida de CEDEARs.');
     if (type === 'investment' && assetAction === 'sell' && numericQuantity > availableCedears) return setError(`Solo tenés ${availableCedears.toLocaleString('es-AR')} ${investmentTicker} disponibles para vender.`);
@@ -86,10 +88,10 @@ export function TransactionForm({ initial, defaultType = 'expense', onDone }: Pr
     {initial?.installmentPlanId && <p className="form-note field--wide">El nuevo importe se aplicará a esta cuota y a las siguientes. Las cuotas anteriores no se modifican.</p>}
     {!initial && <label>Tipo<select value={type} onChange={(event) => changeType(event.target.value as TransactionType)}><option value="expense">Gasto</option><option value="income">Ingreso extra</option><option value="saving">Ahorro en dólares</option><option value="investment">Inversión</option></select></label>}
     <label className={!initial && !isAsset ? '' : 'field--wide'}>Nombre<input value={name} onChange={(event) => setName(event.target.value)} placeholder={isDollarTrade ? assetAction === 'buy' ? 'Ej. Compra de dólares' : 'Ej. Venta de dólares' : type === 'investment' ? `${assetAction === 'buy' ? 'Compra' : 'Venta'} ${investmentTicker}` : 'Ej. Supermercado'} autoFocus /></label>
-    {isAsset && <label>Operación<select value={assetAction} onChange={(event) => setAssetAction(event.target.value as AssetAction)}><option value="buy">Compra</option><option value="sell">Venta</option></select></label>}
+    {isAsset && <label>Operación<select value={isDollarTrade && isGift ? 'gift' : assetAction} onChange={(event) => { const gift = event.target.value === 'gift'; setIsGift(gift); setAssetAction(gift ? 'buy' : event.target.value as AssetAction); setError(''); }}><option value="buy">Compra</option><option value="sell">Venta</option>{isDollarTrade && <option value="gift">Sin costo</option>}</select></label>}
     <label>{isDollarTrade ? 'Cantidad de dólares' : type === 'investment' ? assetAction === 'buy' ? 'Monto invertido' : 'Pesos recibidos' : 'Importe'}<input type="number" inputMode="decimal" min="0.01" step="0.01" value={amount} onChange={(event) => setAmount(event.target.value)} placeholder="0" /></label>
     <label>Moneda<select disabled={isGoalContribution} value={isGoalContribution ? goalCurrency : currency} onChange={(event) => setCurrency(event.target.value as Currency)}>{isDollarTrade ? <option value="USD">USD — Dólares</option> : type === 'investment' ? <option value="ARS">ARS — Pesos</option> : <><option value="ARS">ARS — Pesos</option><option value="USD">USD — Dólares</option></>}</select></label>
-    {isDollarTrade && <><label>Tipo de cambio (ARS por USD)<input type="number" inputMode="decimal" min={assetAction === 'buy' ? '0' : '0.01'} step="0.01" value={exchangeRate} onChange={(event) => setExchangeRate(event.target.value)} placeholder="Ej. 1500" /></label><div className="calculated-value"><small>{assetAction === 'buy' ? 'Se descontarán' : 'Se acreditarán'}</small><strong>{Number(amount) > 0 && exchangeRate.trim() !== '' && Number(exchangeRate) >= 0 ? new Intl.NumberFormat('es-AR', { style: 'currency', currency: 'ARS', maximumFractionDigits: 0 }).format(Number(amount) * Number(exchangeRate)) : '—'}</strong></div>{assetAction === 'sell' && <p className="form-note field--wide">Disponible para vender: USD {availableDollars.toLocaleString('es-AR')}</p>}</>}
+    {isDollarTrade && <><label>Tipo de cambio (ARS por USD)<input type="number" inputMode="decimal" min={assetAction === 'buy' ? '0' : '0.01'} step="0.01" disabled={isGift} value={isGift ? '0' : exchangeRate} onChange={(event) => setExchangeRate(event.target.value)} placeholder="Ej. 1500" /></label><div className="calculated-value"><small>{assetAction === 'buy' ? 'Se descontarán' : 'Se acreditarán'}</small><strong>{Number(amount) > 0 && (isGift || (exchangeRate.trim() !== '' && Number(exchangeRate) >= 0)) ? new Intl.NumberFormat('es-AR', { style: 'currency', currency: 'ARS', maximumFractionDigits: 0 }).format(Number(amount) * (isGift ? 0 : Number(exchangeRate))) : '—'}</strong></div>{assetAction === 'buy' && <p className="form-note field--wide">{isGift ? 'Los dólares se suman a tu tenencia sin descontar pesos del balance.' : 'Si recibiste los dólares gratis, elegí Sin costo o ingresá una cotización de 0.'}</p>}{assetAction === 'sell' && <p className="form-note field--wide">Disponible para vender: USD {availableDollars.toLocaleString('es-AR')}</p>}</>}
     {type === 'investment' && <><label>CEDEAR<select value={investmentTicker} onChange={(event) => setInvestmentTicker(event.target.value)}><option value="SPY">SPY — S&amp;P 500</option><option value="EWZ">EWZ — Brasil</option><option value="AAPL">AAPL — Apple</option><option value="AMZN">AMZN — Amazon</option><option value="KO">KO — Coca-Cola</option><option value="XOM">XOM — Exxon Mobil</option><option value="GOOGL">GOOGL — Google</option><option value="NVDA">NVDA — Nvidia</option><option value="MSFT">MSFT — Microsoft</option></select></label><label>Cantidad<input type="number" min="0.0001" step="0.0001" value={investmentQuantity} onChange={(event) => setInvestmentQuantity(event.target.value)} /></label>{assetAction === 'sell' && <p className="form-note field--wide">Disponible para vender: {availableCedears.toLocaleString('es-AR')} {investmentTicker}</p>}</>}
     <label>Fecha<input type="date" value={date} onChange={(event) => setDate(event.target.value)} /></label>
     <label>Categoría<select aria-label="Categoría" value={categoryId} onChange={(event) => { setCategoryId(event.target.value); setSubcategoryId(''); }}><option value="" disabled>Elegí una categoría</option>{mainCategories.map((item) => <option key={item.id} value={item.id}>{item.icon} {item.name}</option>)}</select></label>

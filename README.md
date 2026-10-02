@@ -89,6 +89,12 @@ La URL y ambas claves locales aparecen al ejecutar `npx supabase status`. La ser
 
 El workflow de CI levanta esa misma stack local con Docker, aplica las migraciones desde cero, instala Chromium y ejecuta el E2E antes de habilitar el deploy. El runner rechaza cualquier `QA_SUPABASE_URL` cuyo host no sea `127.0.0.1`, `localhost` o `::1`, por lo que este flujo no puede apuntar a producción. Para reproducirlo localmente hacen falta Docker, la CLI incluida en las dependencias del proyecto y Chromium administrado por Playwright (`npx playwright-core install chromium`).
 
+## Dólares sin costo y saldo entre meses
+
+En **Nuevo movimiento → Ahorro en dólares → Sin costo**, la cantidad recibida se suma a la tenencia USD con costo de $0 en pesos. También se admite una compra con cotización 0. Las ventas siguen requiriendo una cotización positiva. El almacenamiento utiliza la operación `buy` con `exchange_rate = 0`, compatible con la migración existente `20260831140000_zero_cost_dollar_savings.sql`.
+
+El **Balance disponible** del dashboard y de Análisis suma el saldo de todos los meses anteriores registrados y el resultado del mes seleccionado. Por ejemplo, un cierre de −$90.000 más un sueldo de $1.000.000 da $910.000 disponibles antes de nuevos gastos. Se muestran por separado **Saldo anterior** y **Resultado del mes**; los ingresos, gastos y gráficos mensuales siguen representando sólo ese mes. El arrastre se recalcula al editar o borrar movimientos históricos, sin crear movimientos adicionales, y no incluye meses futuros ni proyecta períodos sin registros.
+
 ## Cambios de sueldo por mes
 
 Editar, pausar o reactivar un sueldo recurrente desde **Gastos fijos** aplica las nuevas condiciones desde el mes seleccionado inclusive. Se actualizan los meses futuros ya creados y las proyecciones de meses nuevos. Los meses anteriores mantienen sus movimientos y las condiciones vigentes en su momento, incluso si se abren por primera vez después del cambio. Una edición reemplaza las condiciones programadas desde el mes elegido en adelante.
@@ -114,6 +120,14 @@ node scripts/import-finance-json.mjs .\respaldo.json
 ```
 
 El script inicia sesión como el usuario de destino, genera UUID determinísticos para los IDs anteriores y llama a la misma función transaccional protegida por RLS. No necesita ni acepta una service-role key. Ejecutarlo nuevamente con el mismo usuario y archivo no duplica registros.
+
+## Actualización automática de gastos
+
+La app escucha cambios de `user_preferences` para el usuario autenticado mediante [Supabase Realtime](https://supabase.com/docs/guides/realtime/postgres-changes). Telegram incrementa `finance_revision` después de guardar cada gasto; ese aviso dispara la carga y conciliación existentes, conservando las ediciones locales pendientes y la revisión manual de conflictos. También se consulta al conectar o reconectar Realtime, volver a la ventana y recuperar internet.
+
+Como respaldo, se consultan los datos cada 15 segundos mientras la app esté visible y con conexión. Los avisos cercanos se agrupan y las consultas automáticas no se superponen. Si llega otro aviso durante una consulta, se realiza una consulta posterior. Al cerrar sesión o cambiar de cuenta se cancelan el canal, los temporizadores y los listeners.
+
+Antes de publicar, aplicá `20261002010000_finance_realtime.sql`. Sólo agrega `user_preferences` a la publicación `supabase_realtime` si hace falta: no borra ni modifica registros, ni cambia las políticas RLS. Sin esta migración, la consulta periódica sigue funcionando, pero no llegan los avisos inmediatos. El QA de Telegram en CI verifica la publicación y el aislamiento de lectura entre cuentas.
 
 ## Deploy en GitHub Pages
 

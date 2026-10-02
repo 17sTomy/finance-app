@@ -2,6 +2,7 @@ import { createContext, useCallback, useContext, useEffect, useMemo, useRef, use
 import { addMonths, format, parseISO } from 'date-fns';
 import { SupabaseFinanceRepository } from '../../infrastructure/persistence/SupabaseFinanceRepository';
 import { FinanceSync } from '../../infrastructure/persistence/FinanceSync';
+import { startFinanceAutoRefresh } from '../../infrastructure/persistence/financeAutoRefresh';
 import type { FinanceConflictChoices, FinanceMergeConflict } from '../../infrastructure/persistence/financeMerge';
 import { normalizeFinanceDatabaseIds } from '../../infrastructure/persistence/financeMappers';
 import type { CalendarEvent, Category, FinanceDatabase, FixedExpense, InstallmentPlan, MonthlyLimit, RecurringIncome, SavingsGoal, Transaction } from '../../modules/finance/domain/models';
@@ -140,14 +141,8 @@ function FinanceSession({ children, userId }: { children: ReactNode; userId: str
 
   useEffect(() => {
     if (!hydrated) return;
-    const refresh = () => { if (document.visibilityState !== 'hidden') void sync.refresh(); };
-    window.addEventListener('focus', refresh);
-    document.addEventListener('visibilitychange', refresh);
-    return () => {
-      window.removeEventListener('focus', refresh);
-      document.removeEventListener('visibilitychange', refresh);
-    };
-  }, [hydrated, sync]);
+    return startFinanceAutoRefresh(sync.refresh, (onChange) => repository.subscribeToChanges?.(userId, onChange) ?? (() => {}));
+  }, [hydrated, sync, userId]);
 
   const ensureMonth = useCallback((key: string, source = database) => ensureDatabaseMonth(source, key), [database]);
 
