@@ -105,8 +105,12 @@ try {
   const cdp = await context.newCDPSession(page);
   const { installabilityErrors } = await cdp.send('Page.getInstallabilityErrors');
   assert.deepEqual(installabilityErrors, [], 'Chromium must recognize an installable application');
-  assert.equal(await page.evaluate(() => window.dispatchEvent(new Event('beforeinstallprompt', { cancelable: true }))), true,
-    'The native install prompt must not be suppressed');
+  assert.equal(await page.evaluate(() => {
+    const event = new Event('beforeinstallprompt', { cancelable: true });
+    Object.defineProperty(event, 'prompt', { value: async () => undefined });
+    Object.defineProperty(event, 'userChoice', { value: Promise.resolve({ outcome: 'dismissed', platform: 'web' }) });
+    return window.dispatchEvent(event);
+  }), false, 'The application must retain the install prompt before entering Settings');
 
   const probe = await page.evaluate(async (url) => [
     await (await fetch(url)).json(), await (await fetch(url)).json(),

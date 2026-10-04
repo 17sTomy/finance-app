@@ -1,6 +1,7 @@
 import { fireEvent, render, screen, waitFor } from '@testing-library/react';
 import { vi } from 'vitest';
 import { DataPage } from './DataPage';
+import { PwaInstallProvider } from '../../../app/providers/PwaInstallProvider';
 
 vi.mock('../../telegram/presentation/TelegramSettings', () => ({ TelegramSettings: () => null }));
 
@@ -23,8 +24,9 @@ vi.mock('../../../app/providers/FinanceProvider', () => ({
 describe('profile preferences', () => {
   beforeEach(() => vi.clearAllMocks());
 
-  it('updates the nickname from Datos and confirms the persisted value', async () => {
-    render(<DataPage />);
+  it('updates the nickname from Ajustes and confirms the persisted value', async () => {
+    render(<PwaInstallProvider><DataPage /></PwaInstallProvider>);
+    expect(screen.getByRole('button', { name: 'Instalar Finance App' })).toBeTruthy();
     const input = screen.getByLabelText('Apodo');
     expect((input as HTMLInputElement).value).toBe('Inicial');
 

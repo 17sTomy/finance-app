@@ -76,6 +76,23 @@ try {
   check('registro con apodo, sesión y carga autenticada');
 
   await page.goto(`${baseUrl}/#/datos`, { waitUntil: 'domcontentloaded' });
+  await page.getByRole('heading', { name: 'Ajustes', exact: true }).waitFor();
+  // Emulate iPhone detection on the local QA account; no native prompt exists on iOS.
+  await page.evaluate(() => Object.defineProperty(navigator, 'userAgent', {
+    configurable: true, get: () => 'Mozilla/5.0 (iPhone; CPU iPhone OS 26_0 like Mac OS X)',
+  }));
+  const manualInstallHelp = page.getByRole('button', { name: 'Ver instrucciones' });
+  if (await manualInstallHelp.isVisible()) await manualInstallHelp.click();
+  else await page.getByRole('button', { name: 'Instalar Finance App' }).click();
+  await page.getByRole('heading', { name: 'Instalar en iPhone o iPad' }).waitFor();
+  assert(await page.locator('.install-share-icon svg').count() === 1, 'La guía no muestra el ícono de Compartir');
+  await page.getByText('Abrir como app web', { exact: true }).waitFor();
+  await page.setViewportSize({ width: 390, height: 844 });
+  assert(await page.evaluate(() => document.documentElement.scrollWidth <= window.innerWidth), 'La guía de instalación desborda en celular');
+  await page.screenshot({ path: fileURLToPath(new URL('install-iphone.png', outputDir)), fullPage: true });
+  await page.setViewportSize({ width: 1440, height: 1100 });
+  await page.evaluate(() => { delete navigator.userAgent; });
+  check('Ajustes ofrece una guía de instalación para iPhone con Compartir visible');
   const nicknameInput = page.getByLabel('Apodo');
   await nicknameInput.waitFor();
   assert(await nicknameInput.inputValue() === 'QA Inicial', 'Datos no recuperó el apodo registrado');
@@ -372,7 +389,7 @@ try {
   }
   assert(concurrentRows.length === 3, 'La sincronización perdió un gasto local o el de Telegram');
   assert(await page.locator('.data-error').count() === 0, 'Quedó un conflicto sin resolver después de combinar gastos independientes');
-  await page.getByRole('link', { name: 'Datos', exact: true }).click();
+  await page.getByRole('link', { name: 'Ajustes', exact: true }).click();
   await page.reload({ waitUntil: 'domcontentloaded' });
   await page.getByText('Cuenta vinculada con @finance_qa.').waitFor();
   const afterReload = await apiA.from('transactions').select('name').in('name', [

@@ -14,7 +14,7 @@ const navigation = [
   { to: '/planificacion', label: 'Planificación', icon: Target },
   { to: '/calendario', label: 'Calendario', icon: CalendarDays },
   { to: '/analisis', label: 'Análisis', icon: ChartNoAxesCombined },
-  { to: '/datos', label: 'Datos', icon: Settings },
+  { to: '/datos', label: 'Ajustes', icon: Settings },
 ];
 
 export function AppLayout() {

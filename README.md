@@ -109,7 +109,7 @@ docker exec -i supabase_db_finance-app psql -U postgres -d postgres -v ON_ERROR_
 
 ## Migrar un respaldo JSON anterior
 
-La pantalla **Datos** sigue aceptando las exportaciones JSON de la versión local. También se incluye un importador idempotente por usuario:
+La pantalla **Ajustes** (ruta `/datos`) sigue aceptando las exportaciones JSON de la versión local. También se incluye un importador idempotente por usuario:
 
 ```powershell
 $env:SUPABASE_URL='https://TU_PROJECT_REF.supabase.co'
@@ -133,7 +133,7 @@ Antes de publicar, aplicá `20261002010000_finance_realtime.sql`. Sólo agrega `
 
 ### Instalación como app
 
-La versión publicada se puede instalar desde el menú del navegador ("Instalar aplicación" o "Añadir página a → Pantalla de inicio", según el navegador). No hay botón de instalación dentro de Finance. El manifiesto usa rutas relativas para funcionar tanto en `/` como en `/finance-app/`, y la app instalada abre la misma dirección con su navegación por hash.
+La versión publicada se puede instalar desde **Ajustes → Instalar Finance App**. En los navegadores compatibles, el botón abre la confirmación nativa. En iPhone o iPad muestra los pasos para completar la instalación desde Safari, con el ícono de Compartir y las alternativas de menú. Si el navegador no ofrece instalación directa, muestra instrucciones para usar su menú. Aceptar la confirmación no se muestra como instalación completada: se espera el evento del navegador o la apertura en modo app. El manifiesto usa rutas relativas para funcionar tanto en `/` como en `/finance-app/`, y la app instalada abre la misma dirección con su navegación por hash.
 
 La PWA sigue necesitando conexión para cargar y sincronizar las finanzas. Si una navegación falla por falta de red, muestra un aviso con la opción de volver a intentar. El service worker no almacena respuestas ni intercepta las llamadas de Auth o Supabase. No modifica sesiones, borradores, claves de almacenamiento ni datos de la base; no requiere migraciones. Las actualizaciones esperan a que se cierren las ventanas anteriores, sin forzar recargas de formularios abiertos.
 
