@@ -51,10 +51,12 @@ export function calculateSummary(transactions: Transaction[], currency: Currency
 }
 
 const sumAmount = (total: number, item: Transaction) => total + item.amount;
-/** Carry recorded cash flow forward without creating duplicate income/expense entries. */
+const CASH_BALANCE_START_MONTH = '2026-09';
+
+/** September 2026 starts from zero; October and later carry cash flow from that month onward. */
 export function cashBalanceForMonth(database: FinanceDatabase, selectedMonth: string, currency: Currency = 'ARS') {
   const openingBalance = Object.entries(database.months)
-    .filter(([key]) => key < selectedMonth)
+    .filter(([key]) => key >= CASH_BALANCE_START_MONTH && key < selectedMonth)
     .reduce((total, [, month]) => total + calculateSummary(month.transactions, currency).balance, 0);
   const monthlyBalance = calculateSummary(database.months[selectedMonth]?.transactions ?? [], currency).balance;
   return { openingBalance, monthlyBalance, balance: openingBalance + monthlyBalance };

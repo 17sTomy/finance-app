@@ -28,6 +28,49 @@ describe('selectores financieros', () => {
     },
   });
 
+  const balanceStartDatabase = (): FinanceDatabase => {
+    const balances: [string, number][] = [
+      ['2025-09', 5000000], ['2026-07', 200000], ['2026-08', -120000],
+      ['2026-09', -90000], ['2026-10', 1000000], ['2026-11', -200000],
+      ['2027-01', 500000], ['2027-10', 2000000],
+    ];
+    return {
+      ...cashDatabase(),
+      months: Object.fromEntries(balances.map(([key, balance]) => [key, {
+        year: Number(key.slice(0, 4)), month: Number(key.slice(5)), limits: [], events: [], createdAt: '',
+        transactions: [{
+          id: key, name: 'Movimiento', amount: Math.abs(balance), currency: 'ARS',
+          date: `${key}-01`, type: balance < 0 ? 'expense' : 'income',
+        }],
+      } satisfies MonthlyFinanceData])),
+    };
+  };
+
+  it.each([
+    ['2026-08', 0, -120000, -120000],
+    ['2026-09', 0, -90000, -90000],
+    ['2026-10', -90000, 1000000, 910000],
+    ['2026-11', 910000, -200000, 710000],
+    ['2026-12', 710000, 0, 710000],
+    ['2027-01', 710000, 500000, 1210000],
+    ['2027-09', 1210000, 0, 1210000],
+  ])('calcula %s con arrastre desde octubre de 2026 y base en septiembre', (month, openingBalance, monthlyBalance, balance) => {
+    const database = balanceStartDatabase();
+    const original = structuredClone(database);
+    expect(cashBalanceForMonth(database, month)).toEqual({ openingBalance, monthlyBalance, balance });
+    expect(database).toEqual(original);
+  });
+
+  it('ignora correcciones anteriores al inicio y recalcula las de septiembre sin recuperar meses excluidos', () => {
+    const database = balanceStartDatabase();
+    database.months['2026-08'].transactions[0].amount = 9000000;
+    expect(cashBalanceForMonth(database, '2026-10').balance).toBe(910000);
+    database.months['2026-09'].transactions[0].amount = 100000;
+    expect(cashBalanceForMonth(database, '2026-10').balance).toBe(900000);
+    delete database.months['2026-09'];
+    expect(cashBalanceForMonth(database, '2026-10')).toEqual({ openingBalance: 0, monthlyBalance: 1000000, balance: 1000000 });
+  });
+
   it('arrastra un cierre de -90.000 al sueldo del mes siguiente, incluso entre años', () => {
     const database = cashDatabase();
     expect(cashBalanceForMonth(database, '2027-01')).toEqual({ openingBalance: -90000, monthlyBalance: 1000000, balance: 910000 });
