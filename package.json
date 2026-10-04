@@ -9,6 +9,7 @@
     "lint": "eslint .",
     "test": "vitest run",
     "test:e2e": "node qa/browser-qa.mjs",
+    "test:pwa": "node qa/pwa-qa.mjs",
     "test:watch": "vitest",
     "configure:telegram": "node scripts/configure-telegram.mjs"
   },

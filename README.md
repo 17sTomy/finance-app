@@ -131,6 +131,24 @@ Antes de publicar, aplicá `20261002010000_finance_realtime.sql`. Sólo agrega `
 
 ## Deploy en GitHub Pages
 
+### Instalación como app
+
+La versión publicada se puede instalar desde el menú del navegador ("Instalar aplicación" o "Añadir página a → Pantalla de inicio", según el navegador). No hay botón de instalación dentro de Finance. El manifiesto usa rutas relativas para funcionar tanto en `/` como en `/finance-app/`, y la app instalada abre la misma dirección con su navegación por hash.
+
+La PWA sigue necesitando conexión para cargar y sincronizar las finanzas. Si una navegación falla por falta de red, muestra un aviso con la opción de volver a intentar. El service worker no almacena respuestas ni intercepta las llamadas de Auth o Supabase. No modifica sesiones, borradores, claves de almacenamiento ni datos de la base; no requiere migraciones. Las actualizaciones esperan a que se cierren las ventanas anteriores, sin forzar recargas de formularios abiertos.
+
+El QA de PWA usa datos sintéticos y bloquea las conexiones externas; no necesita credenciales ni accede a finanzas reales. Comprueba el manifiesto, los iconos, el alcance del service worker, la conservación del almacenamiento, las actualizaciones y la recuperación de conexión:
+
+```bash
+npx playwright-core install chromium
+npm run build
+npm run test:pwa
+```
+
+También corre en CI antes de publicar, junto con el E2E existente de Supabase local.
+
+### Publicación
+
 Configurá en el repositorio:
 
 - Variable `VITE_SUPABASE_URL`.

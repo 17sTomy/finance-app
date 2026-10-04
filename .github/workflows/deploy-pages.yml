@@ -95,6 +95,9 @@ jobs:
           VITE_SUPABASE_URL: ${{ env.API_URL }}
           VITE_SUPABASE_PUBLISHABLE_KEY: ${{ env.ANON_KEY }}
 
+      - name: Test PWA installation, storage and update lifecycle
+        run: npm run test:pwa
+
       - name: Run local authenticated E2E
         run: npm run test:e2e
         env:
